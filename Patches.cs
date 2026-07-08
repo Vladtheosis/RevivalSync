@@ -270,6 +270,29 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
+    /// The BepInEx plugin component's Update/FixedUpdate never run in this game, so the
+    /// driver loops ride on game code that provably updates: GameDirector (every frame)
+    /// and PlayerController (every physics step, exists whenever gameplay exists).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class DriverHooksPatch
+    {
+        [HarmonyPatch(typeof(GameDirector), "Update")]
+        [HarmonyPostfix]
+        private static void OnFrame()
+        {
+            SimDriver.FrameUpdate();
+        }
+
+        [HarmonyPatch(typeof(PlayerController), "FixedUpdate")]
+        [HarmonyPostfix]
+        private static void OnPhysicsTick()
+        {
+            SimManager.Tick();
+        }
+    }
+
+    /// <summary>
     /// Fires when the game (or Photon itself) creates its network dispatcher —
     /// the earliest safe moment to touch PhotonNetwork.
     /// </summary>

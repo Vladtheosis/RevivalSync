@@ -369,10 +369,21 @@ namespace RevivalSync
 
         private static int tickCounter;
         private static bool wasClientInLobby;
+        private static float lastTickFixedTime = -1f;
+        private static bool tickMarker;
 
         internal static void Tick()
         {
             if (!Ready) return;
+            // driven from both a Harmony hook and the plugin component (whichever works
+            // in this setup) — run at most once per physics step
+            if (Time.fixedTime == lastTickFixedTime) return;
+            lastTickFixedTime = Time.fixedTime;
+            if (!tickMarker)
+            {
+                tickMarker = true;
+                Plugin.Log.LogInfo("[driver] physics tick loop running");
+            }
             SweepHandedBack();
 
             bool clientInLobby = IsClientInLobby();
@@ -897,40 +908,59 @@ namespace RevivalSync
         }
     }
 
-    /// <summary>Runs the simulation bookkeeping every physics tick.</summary>
-    internal class SimDriver : MonoBehaviour
+    /// <summary>
+    /// Per-frame upkeep, driven by the Plugin component itself (BepInEx guarantees it
+    /// persists — a separate DontDestroyOnLoad GameObject created during chainloading
+    /// silently dies with the first scene load and its Update never runs).
+    /// </summary>
+    internal static class SimDriver
     {
-        private float nextRegisterSweep;
-        private float nextStatsLog;
-        private int lastPacketCount;
+        private static bool announced;
+        private static bool conflictsChecked;
+        private static float nextRegisterSweep;
+        private static float nextStatsLog;
+        private static int lastPacketCount;
+        private static int lastFrame = -1;
 
-        private void Start()
+        internal static void FrameUpdate()
         {
-            // by now every plugin has loaded, so conflict checks are reliable
-            string[] conflicts =
+            // driven from both a Harmony hook and the plugin component — once per frame
+            if (Time.frameCount == lastFrame) return;
+            lastFrame = Time.frameCount;
+
+            if (!announced)
             {
-                "net.ovchinikov.nwrework", "BlueAmulet.REPONetworkTweaks",
-                "com.Revival.networkingrevived", "com.Revival.networktweaksrevived",
-            };
-            foreach (string guid in conflicts)
+                announced = true;
+                Plugin.Log.LogInfo("[driver] alive — update loop running");
+            }
+
+            Plugin.EnsureCapturePatch();
+
+            if (!conflictsChecked && Time.unscaledTime > 10f)
             {
-                if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(guid))
+                conflictsChecked = true;
+                string[] conflicts =
                 {
-                    Plugin.Log.LogWarning($"Conflicting mod '{guid}' is still installed! RevivalSync replaces it — " +
-                                          "please uninstall/disable the old mod.");
+                    "net.ovchinikov.nwrework", "BlueAmulet.REPONetworkTweaks",
+                    "com.Revival.networkingrevived", "com.Revival.networktweaksrevived",
+                };
+                foreach (string guid in conflicts)
+                {
+                    if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(guid))
+                    {
+                        Plugin.Log.LogWarning($"Conflicting mod '{guid}' is still installed! RevivalSync replaces it — " +
+                                              "please uninstall/disable the old mod.");
+                    }
                 }
             }
-        }
 
-        private void Update()
-        {
             // catches objects that existed before we joined (late join, level already loaded)
             if (Time.unscaledTime >= nextRegisterSweep)
             {
                 nextRegisterSweep = Time.unscaledTime + 5f;
                 if (SimManager.Ready && SimManager.IsClientInLobby())
                 {
-                    foreach (PhysGrabObject pgo in FindObjectsOfType<PhysGrabObject>())
+                    foreach (PhysGrabObject pgo in UnityEngine.Object.FindObjectsOfType<PhysGrabObject>())
                     {
                         SimManager.TryRegister(pgo);
                     }
@@ -951,16 +981,6 @@ namespace RevivalSync
 
             Plugin.ApplyPhotonSettings();
             Smoothing.Sweep();
-        }
-
-        private void FixedUpdate()
-        {
-            SimManager.Tick();
-        }
-
-        private void OnDestroy()
-        {
-            SimManager.RestoreAll();
         }
     }
 }

@@ -13,7 +13,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.0.1";
+        public const string PluginVersion = "1.0.2";
 
         internal static ManualLogSource Log;
 
@@ -38,10 +38,30 @@ namespace RevivalSync
 
         /// <summary>
         /// False until the game initializes Photon itself. Touching PhotonNetwork before
-        /// that forces Photon's dispatcher object into existence during plugin loading,
-        /// which silently kills all connectivity.
+        /// that (including PATCHING its methods!) forces Photon's dispatcher object into
+        /// existence during plugin loading, which silently kills all connectivity.
         /// </summary>
         internal static bool PhotonReady;
+
+        private static Harmony harmony;
+        private static bool capturePatched;
+
+        /// <summary>Applies the PhotonNetwork.OnSerializeRead capture patch once Photon is
+        /// up — never earlier (see PhotonReady).</summary>
+        internal static void EnsureCapturePatch()
+        {
+            if (capturePatched || !PhotonReady || harmony == null) return;
+            capturePatched = true;
+            try
+            {
+                harmony.PatchAll(typeof(Patches.SerializeReadCapturePatch));
+                Log.LogInfo("Host-state capture hooked (deferred until Photon start).");
+            }
+            catch (Exception e)
+            {
+                Log.LogError($"Failed to hook host-state capture: {e}");
+            }
+        }
 
         private void Awake()
         {
@@ -100,12 +120,16 @@ namespace RevivalSync
                 return;
             }
 
-            var harmony = new Harmony(PluginGuid);
+            harmony = new Harmony(PluginGuid);
             int patched = 0, failed = 0;
+            // NOTE: SerializeReadCapturePatch is deliberately NOT in this list. Patching a
+            // PhotonNetwork method here would force Photon's static initialization during
+            // plugin loading, which silently kills all connectivity ("no internet" bug).
+            // It is applied lazily by EnsureCapturePatch() once the game starts Photon.
             Type[] patchTypes =
             {
+                typeof(Patches.DriverHooksPatch),
                 typeof(Patches.PhotonHandlerAwakePatch),
-                typeof(Patches.SerializeReadCapturePatch),
                 typeof(Patches.PhysGrabObjectStartPatch),
                 typeof(Patches.GrabStartedPatch),
                 typeof(Patches.GrabEndedPatch),
@@ -150,13 +174,27 @@ namespace RevivalSync
                 return;
             }
 
-            var driver = new GameObject("RevivalSyncDriver");
-            UnityEngine.Object.DontDestroyOnLoad(driver);
-            driver.AddComponent<SimDriver>();
-
             Log.LogInfo($"{PluginName} {PluginVersion} loaded. Patches: {patched} ok, {failed} failed. " +
                         $"SmoothSync: {Smoothing.Active}. Prediction activates when you join someone else's lobby; " +
                         "the mod is inert while hosting.");
+        }
+
+        // fallback drivers: the plugin component's loops don't run in this game
+        // (verified), so the real drivers are Harmony hooks (Patches.DriverHooksPatch) —
+        // these stay as a harmless safety net, guarded against double-running
+        private void Update()
+        {
+            SimDriver.FrameUpdate();
+        }
+
+        private void FixedUpdate()
+        {
+            SimManager.Tick();
+        }
+
+        private void OnDestroy()
+        {
+            SimManager.RestoreAll();
         }
 
         /// <summary>
