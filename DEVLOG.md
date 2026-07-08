@@ -156,3 +156,11 @@ readthisifbad/NetworkingReworked + ilspycmd). Techniques adopted with credit:
    ActivateHitbox() on swing start - the answer if melee hits ever feel wrong for clients.
 6. Their passive sync = raw rb.position/rotation/velocity lerps at 0.075, gated off while
    locally grabbed or riding a held cart; release used staged coroutine re-sync (SlowSyncCartRoutine).
+
+### Correction to point 5 above (checked, do not re-chase)
+The melee swing patch CANNOT and NEED NOT be ported: ItemMelee.OnPhotonSerializeView and
+the isSwinging field no longer exist in the current game. Melee swings are now synced via
+StateSetRPC (host -> RpcTarget.All, MasterOnlyRPC-guarded); StateSwinging calls
+ActivateHitbox() from the UNGATED Update() half, i.e. hitboxes already activate on every
+client natively. If melee hits ever feel wrong for clients, the suspect is hitbox POSITION
+(host sees the weapon trailing our hand by ~ping), not activation.
