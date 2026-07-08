@@ -2,6 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.3
+
+- Held tools now STAY straight: the game's default grab torque wants a different
+  orientation and was shoving the tool off the host's straightened rotation. We now do
+  what the game's own weapon scripts do while imposing orientation — neutralize that
+  torque and heavily damp rotation — then hold the host's rotation unopposed. Manually
+  rotating a held item still takes priority, exactly like the game's gun code
+- Completed the full study of the original NetworkingReworked (credit: readthisifbad):
+  every technique catalogued in docs/NETWORKINGREWORKED-NOTES.md with adoption status
+
 # 1.1.2
 
 Three fixes powered by studying the original NetworkingReworked's code (credit:

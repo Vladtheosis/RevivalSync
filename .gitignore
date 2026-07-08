@@ -13,3 +13,4 @@ LocalPaths.props
 *.secret
 # ...but the helper script that PROMPTS for the token (contains no secret) is fine
 !set-token.ps1
+reference/

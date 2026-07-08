@@ -8,7 +8,7 @@
     <LangVersion>9.0</LangVersion>
     <AssemblyName>RevivalSync</AssemblyName>
     <RootNamespace>RevivalSync</RootNamespace>
-    <Version>1.1.2</Version>
+    <Version>1.1.3</Version>
     <Authors>Revival</Authors>
     <Company>Revival</Company>
     <Copyright>Revival</Copyright>
@@ -19,6 +19,11 @@
     <GameManaged Condition="'$(GameManaged)' == ''">C:\Program Files (x86)\Steam\steamapps\common\REPO\REPO_Data\Managed</GameManaged>
     <BepInExCore Condition="'$(BepInExCore)' == ''">C:\Program Files (x86)\Steam\steamapps\common\REPO\BepInEx\core</BepInExCore>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- reference/ holds decompiled study material (gitignored), never compiled -->
+    <Compile Remove="reference/**/*.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="BepInEx">

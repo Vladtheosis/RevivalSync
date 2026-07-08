@@ -619,17 +619,22 @@ namespace RevivalSync
             }
 
             // gadgets without local orientation logic: the host runs their straightening
-            // scripts on our behalf. Steer ANGULAR VELOCITY toward its rotation instead of
-            // forcing the transform — MoveRotation fought the grab torque every tick,
-            // which was the residual held-tool jitter. Position stays local.
-            if (st.mirrorHeldRot && !heldHostIdle)
+            // scripts on our behalf. To make the tool STAY straight we do what the game's
+            // own item scripts do while imposing orientation (see ItemGun.UpdateMaster):
+            // neutralize the default grab torque — whose different target orientation is
+            // what shoved the tool off-straight — heavily damp rotation, then steer
+            // angular velocity toward the host's rotation, unopposed. Manual rotation
+            // (rotate key) gets priority, exactly like the game's gun code does it.
+            if (st.mirrorHeldRot && !heldHostIdle && !grabber.isRotating)
             {
+                st.pgo.OverrideTorqueStrength(0.02f);
+                st.pgo.OverrideAngularDrag(25f);
                 (st.hostRot * Quaternion.Inverse(st.rb.rotation)).ToAngleAxis(out float mAngle, out Vector3 mAxis);
                 if (mAngle > 180f) mAngle -= 360f;
-                if (Mathf.Abs(mAngle) > 3f && !float.IsInfinity(mAxis.x))
+                if (Mathf.Abs(mAngle) > 1f && !float.IsInfinity(mAxis.x))
                 {
-                    Vector3 mirrorAngVel = Vector3.ClampMagnitude(Mathf.Deg2Rad * mAngle * mAxis.normalized * 3f, 6f);
-                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, mirrorAngVel, 0.25f);
+                    Vector3 mirrorAngVel = Vector3.ClampMagnitude(Mathf.Deg2Rad * mAngle * mAxis.normalized * 6f, 8f);
+                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, mirrorAngVel, 0.5f);
                 }
             }
 
