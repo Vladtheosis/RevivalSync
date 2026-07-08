@@ -309,6 +309,20 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
+    /// When the local player (or their cart/held object) physically pushes a door, tell
+    /// the simulation so it stops syncing the door toward the host's still-closed copy.
+    /// </summary>
+    [HarmonyPatch(typeof(PhysGrabHinge), "OnCollisionStay")]
+    internal static class HingePushPatch
+    {
+        private static void Postfix(PhysGrabHinge __instance, Collision other)
+        {
+            if (!SimManager.Ready || !SimManager.IsClientInLobby()) return;
+            SimManager.NotifyHingePushed(__instance, other);
+        }
+    }
+
+    /// <summary>
     /// The BepInEx plugin component's Update/FixedUpdate never run in this game, so the
     /// driver loops ride on game code that provably updates: GameDirector (every frame)
     /// and PlayerController (every physics step, exists whenever gameplay exists).

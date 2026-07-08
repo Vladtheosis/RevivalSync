@@ -36,6 +36,7 @@ namespace RevivalSync
             public int viewId;
 
             public bool localGrab;          // held by the local player right now
+            public float localPushTimer;    // hinges: local player/held object is pushing — go fully local
             public float postThrowTimer;    // > 0 shortly after release: blend extra softly
             public float desyncTimer;       // how long we've been far from the host's copy while holding
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
@@ -519,10 +520,12 @@ namespace RevivalSync
             // The host's copy ALWAYS trails us by (speed x lag) while we drag — that trail is
             // normal and must not be "corrected", or the correction acts as a permanent brake.
             // Allow a velocity-proportional trail and compare against a velocity-led host
-            // position; only true divergence gets corrected.
+            // position; only true divergence gets corrected. Stale packets mean the host's
+            // copy is at rest — never lead by stale velocities.
             float speed = st.rb.velocity.magnitude;
             float lagAllowance = speed * 0.4f;
-            Vector3 ledHostPos = st.hostPos + st.hostVel * 0.15f;
+            bool heldHostIdle = Time.unscaledTime - st.lastPacketTime > 0.35f;
+            Vector3 ledHostPos = heldHostIdle ? st.hostPos : st.hostPos + st.hostVel * 0.15f;
 
             float correctAt = (st.cart != null
                 ? Plugin.HeldDriftCorrectAt.Value * 0.4f
@@ -698,6 +701,14 @@ namespace RevivalSync
             if (st.isHinge)
             {
                 CheckHingeBroken(st);
+                // while the local player (or something they hold/push) is shoving this door,
+                // the host's copy is still closed — syncing toward it fights the push
+                // ("delayed and buggy, eventually opens"); go fully local briefly instead
+                if (st.localPushTimer > 0f)
+                {
+                    st.localPushTimer -= Time.fixedDeltaTime;
+                    return;
+                }
                 if (Quaternion.Angle(st.rb.rotation, st.hostRot) > 0.5f)
                 {
                     float ha = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
@@ -758,6 +769,35 @@ namespace RevivalSync
             st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, a));
             st.rb.velocity = Vector3.Lerp(st.rb.velocity, targetVel, a);
             st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, a);
+        }
+
+        /// <summary>Called from the hinge collision hook: if the local player or something
+        /// they control is physically pushing this door, let it go fully local briefly.</summary>
+        internal static void NotifyHingePushed(PhysGrabHinge hinge, Collision collision)
+        {
+            if (hinge == null || collision == null) return;
+            PhysGrabObject pgo = hinge.GetComponent<PhysGrabObject>();
+            if (pgo == null || !states.TryGetValue(pgo, out SimState st) || !st.isHinge) return;
+
+            bool localPush = false;
+            if (collision.gameObject.CompareTag("Player") && PlayerController.instance != null
+                && Vector3.Distance(collision.transform.position, PlayerController.instance.transform.position) < 3f)
+            {
+                localPush = true; // the local player's body (remote avatars are further away)
+            }
+            else if (collision.rigidbody != null)
+            {
+                PhysGrabObject otherPgo = collision.rigidbody.GetComponent<PhysGrabObject>();
+                if (otherPgo != null && states.TryGetValue(otherPgo, out SimState os)
+                    && (os.localGrab || os.ridingTick >= tickCounter - 2))
+                {
+                    localPush = true; // a locally-held object or cargo of a locally-held cart
+                }
+            }
+            if (localPush)
+            {
+                st.localPushTimer = 0.75f;
+            }
         }
 
         /// <summary>The host decided a hinge broke — mirror it by dropping our local joint.</summary>
