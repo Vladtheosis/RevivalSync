@@ -95,3 +95,21 @@ divergence (convergence guarantee) and host-kinematic objects. Held drift correc
 acceleration nudges (velocity += clamp(err,3) * 2.5 * dt). Lag estimate clamped to 0.3s.
 Post-throw: velocity blend drops to 0.08/tick or it would yank predicted throws toward
 stale host velocity.
+
+## 1.1.0 - weapon straightening + convergence, stable release
+
+Held weapons stayed sideways for clients: item scripts call PhysGrabObject.TurnXYZ
+(orientation targets) behind IsMasterClientOrSingleplayer gates. The torque APPLICATION
+already ran locally (PhysGrabObject.FixedUpdate is transpiled) - only the target-setting
+calls were gated out. Fix: transpile ItemGun.UpdateMaster + ItemMelee.FixedUpdate +
+ItemMelee.TurnWeapon (orientation/override-only methods - verified in decomp that
+shooting/misfire/battery/damage all live in separately-gated methods that stay host-only).
+Ten other gadget classes call TurnXYZ with per-class structures; instead of transpiling
+them all, held items without ItemGun/ItemMelee mirror the HOST's rotation while held
+(mirrorHeldRot, slerp 0.12/tick, 2-degree deadband, skipped while heldHostIdle) - the host
+runs their scripts on our behalf, so its rotation IS the straightened answer.
+
+Convergence: removed the far-branch MovePosition entirely (jiggle source); one
+distance-scaled velocity law now covers all divergences: gain = a*25*(1+2*errMag),
+correction clamped 10 m/s. Multi-meter gaps close in ~0.4s, smoothly. Position writes on
+dynamic bodies remain ONLY in Snap() and the host-kinematic branch (correct usage).

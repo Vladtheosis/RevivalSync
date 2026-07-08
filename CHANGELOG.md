@@ -2,7 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
-> **HIGHLY EXPERIMENTAL — testing phase. Prone to game-breaking bugs. Not for normal play.**
+# 1.1.0 — first stable release
+
+- Held weapons now straighten out in your hand like they do for the host: guns and melee
+  weapons run the game's own orientation logic locally (instant), and every other gadget
+  mirrors the host's straightened rotation while held
+- Objects that drifted from the host's state no longer jiggle their way back or trail far
+  behind: position forcing is gone entirely for physics objects, replaced by
+  distance-scaled velocity steering that closes big gaps in under half a second — smoothly
+- Out of the experimental phase: warnings retired, VerboseLogging defaults to off
+  (turn it on and attach LogOutput.log when reporting bugs)
 
 # 1.0.7
 

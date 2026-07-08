@@ -13,7 +13,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.0.7";
+        public const string PluginVersion = "1.1.0";
 
         internal static ManualLogSource Log;
 
@@ -117,10 +117,10 @@ namespace RevivalSync
                 new ConfigDescription("Seconds between updates after which data is considered discontinuous.",
                     new AcceptableValueRange<float>(0.2f, 5f)));
 
-            VerboseLogging = Config.Bind("Advanced", "VerboseLogging", true,
+            VerboseLogging = Config.Bind("Advanced", "VerboseLogging", false,
                 "Log everything the sync system does: registrations, grabs/releases, snaps, handbacks, " +
-                "host packet flow, stale-data warnings and periodic stats. ON by default while the mod " +
-                "is in its experimental testing phase — attach LogOutput.log to bug reports.");
+                "host packet flow, stale-data warnings and periodic stats. Turn ON and attach " +
+                "LogOutput.log when reporting bugs.");
 
             if (!SimManager.InitAccessors())
             {

@@ -42,6 +42,7 @@ namespace RevivalSync
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
             public int ridingTick;          // == current tick when sitting inside a locally-held cart
+            public bool mirrorHeldRot;      // item without local orientation logic: copy host rotation while held
 
             public bool hasHostState;
             public float lastPacketTime = -999f;
@@ -294,6 +295,14 @@ namespace RevivalSync
                 // hinge logic and hinge-point setup are gated on spawned, which vanilla
                 // never sets on clients
                 pgo.spawned = true;
+            }
+            if (!st.isHinge && st.cart == null && pgo.GetComponentInParent<ItemAttributes>() != null)
+            {
+                // items orient themselves in hand through master-gated scripts. Guns and
+                // melee run that logic locally (authority transpiler); every other gadget
+                // mirrors the host's already-straightened rotation while held instead.
+                st.mirrorHeldRot = pgo.GetComponentInChildren<ItemGun>(true) == null
+                                && pgo.GetComponentInChildren<ItemMelee>(true) == null;
             }
 
             // seed from whatever the transform view last received, so we have a sane
@@ -592,6 +601,14 @@ namespace RevivalSync
                                   * (2.5f * Time.fixedDeltaTime);
             }
 
+            // gadgets without local orientation logic: the host runs their straightening
+            // scripts on our behalf — mirror the resulting rotation (position stays local)
+            if (st.mirrorHeldRot && !heldHostIdle
+                && Quaternion.Angle(st.rb.rotation, st.hostRot) > 2f)
+            {
+                st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, 0.12f));
+            }
+
             DebugHeld(st, grabber, drift, speed);
         }
 
@@ -800,21 +817,20 @@ namespace RevivalSync
             // target lets the body glide to the host state and keeps rigidbody
             // interpolation smooth.
             Vector3 posErr = targetPos - st.rb.position;
-            if (posErr.sqrMagnitude < 2.25f) // within 1.5m: normal operation
+            float errMag = posErr.magnitude;
+            if (errMag > 0.02f) // deadband: don't chase packet noise at equilibrium
             {
-                Vector3 desiredVel = targetVel;
-                if (posErr.sqrMagnitude > 0.0004f) // 2cm deadband: don't chase packet noise
-                {
-                    desiredVel += Vector3.ClampMagnitude(posErr * (a * 25f), 4f);
-                }
+                // error-scaled pull: gentle when nearly in place, firm when far — the
+                // object glides to the host's state quickly but is never position-forced
+                // (position forcing was the "jiggles its way over" look; slow flat gain
+                // was the "and it's kinda far off" trail)
+                float gain = a * 25f * (1f + errMag * 2f);
+                Vector3 desiredVel = targetVel + Vector3.ClampMagnitude(posErr * gain, 10f);
                 st.rb.velocity = Vector3.Lerp(st.rb.velocity, desiredVel, velBlend);
             }
             else
             {
-                // far off: position blending guarantees convergence through geometry
-                // (the wedge and snap handling above covers the pathological cases)
-                st.rb.MovePosition(Vector3.Lerp(st.rb.position, targetPos, a));
-                st.rb.velocity = Vector3.Lerp(st.rb.velocity, targetVel, a);
+                st.rb.velocity = Vector3.Lerp(st.rb.velocity, targetVel, velBlend);
             }
 
             // rotation gets a small deadband too, so settled objects never shimmer

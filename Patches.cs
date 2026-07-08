@@ -225,6 +225,16 @@ namespace RevivalSync.Patches
             {
                 Add(typeof(PhysGrabObjectGrabArea), "Update");
             }
+            if (Plugin.SimulateItems.Value)
+            {
+                // held weapons straighten themselves (TurnXYZ) only on the host — these
+                // methods contain nothing but orientation and grab-physics overrides, so
+                // they are safe to run locally. Item EFFECTS (shooting, damage, battery,
+                // misfires) live in other methods and keep their host-only gates.
+                Add(typeof(ItemGun), "UpdateMaster");
+                Add(typeof(ItemMelee), "FixedUpdate");
+                Add(typeof(ItemMelee), "TurnWeapon");
+            }
             return targets;
         }
 
