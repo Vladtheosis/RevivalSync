@@ -208,7 +208,9 @@ namespace RevivalSync
             if (o.GetComponentInParent<Enemy>() != null) return false;
             if (o.GetComponentInParent<EnemyRigidbody>() != null) return false;
             if (o.GetComponentInParent<PhysGrabHinge>() != null) return Plugin.SimulateHinges.Value;
-            if (o.GetComponentInParent<ItemAttributes>() != null) return false;
+            // shop items follow the same passive-shadowing rules as valuables; their own
+            // logic (damage, explosions, batteries) stays host-gated and untouched
+            if (o.GetComponentInParent<ItemAttributes>() != null) return Plugin.SimulateItems.Value;
             return true;
         }
 

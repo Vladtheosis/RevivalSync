@@ -4,6 +4,15 @@
 
 > **HIGHLY EXPERIMENTAL — testing phase. Prone to game-breaking bugs. Not for normal play.**
 
+# 1.0.7
+
+- Shop items (weapons, swords, grenades, energy crystals, tools...) are now simulated
+  locally like valuables and carts: they follow your hand instantly instead of being
+  host-driven with interpolation delay stacked on top ("tools feel laggy"). Thrown
+  items fly with your predicted throw too. Their effects — damage, explosions, battery
+  drain, breaking — remain host-decided exactly like vanilla.
+  Config: Simulation > SimulateItems
+
 # 1.0.6
 
 - Fixed world-wide vibration/jitter ("phone on max"): sync corrections were forcing object

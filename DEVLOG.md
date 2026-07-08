@@ -1,4 +1,4 @@
-# RevivalSync — Development Log & Hard-Won Lessons
+﻿# RevivalSync — Development Log & Hard-Won Lessons
 
 Reference for contributors (and future debugging). Chronological-ish, distilled.
 
@@ -22,7 +22,7 @@ Reference for contributors (and future debugging). Chronological-ish, distilled.
   self-aligns past other components' segments). Per-component capture proved unreliable.
 - `PhotonTransformView` suppressed for simulated objects (Update prefix skip; serialize read
   = consume-and-discard 8 values to keep the stream aligned).
-- Excluded from simulation: enemies, tumbled players, shop/inventory items (ItemAttributes).
+- Excluded from simulation: enemies, tumbled players. Shop items (ItemAttributes) were excluded until 1.0.7 - that made tools/weapons feel laggy in hand (host-driven + Smoothing delay stacked); now simulated like valuables (config SimulateItems), item LOGIC stays host-gated.
 
 ## The two foundational platform gotchas (cost days)
 1. **Never touch OR Harmony-patch `PhotonNetwork` during plugin load.** Its static ctor spawns
