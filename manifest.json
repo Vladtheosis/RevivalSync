@@ -1,6 +1,6 @@
 {
     "name": "RevivalSync",
-    "version_number": "1.0.4",
+    "version_number": "1.0.5",
     "website_url": "https://github.com/Vladtheosis/RevivalSync",
     "description": "[HIGHLY EXPERIMENTAL - expect game-breaking bugs, not for normal play] Singleplayer-feel multiplayer for R.E.P.O. Made by Revival.",
     "dependencies": [

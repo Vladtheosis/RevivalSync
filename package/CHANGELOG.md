@@ -4,13 +4,17 @@
 
 > **HIGHLY EXPERIMENTAL — testing phase. Prone to game-breaking bugs. Not for normal play.**
 
-# 1.0.4
+# 1.0.5
 
 - Pushing doors open with a cart (or your body, or held loot) no longer fights the sync:
   while you're physically pushing a door, it goes fully local so it swings immediately,
   then settles back to the host's state after — no more delayed/buggy door shoving
 - Held objects no longer trust stale velocity data when the host pauses sending
   (a subtle source of weird cart corrections)
+
+# 1.0.4
+
+- Interim re-release published directly on Thunderstore: same code as 1.0.3, packaging tweaks only
 
 # 1.0.3
 
