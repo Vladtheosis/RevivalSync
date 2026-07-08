@@ -37,11 +37,15 @@ host and activates when you're the client.
 
 ## Config
 
-`BepInEx/config/com.Revival.revivalsync.cfg` — simulation toggles (carts, doors, items),
-sync strengths, SmoothSync tuning, timeout toggle. When reporting a bug, set
-`VerboseLogging = true` first — it records everything the sync system does
-(registrations, grabs, snaps, handbacks, host packet flow) — and include your
-`BepInEx/LogOutput.log`.
+`BepInEx/config/com.Revival.revivalsync.cfg` (or the in-game mod settings menu if you use
+REPOConfig). Three sections:
+
+- **1. Main** — plain on/off switches (instant carts / doors / items, no timeout kicks,
+  smooth enemies). Safe to flip; everything defaults to ON.
+- **2. Fine-Tuning** — numbers for how firmly things sync. The defaults are good; touch
+  only if you're troubleshooting something specific.
+- **3. Debug** — `Verbose Logging`: turn ON before reporting a bug and include your
+  `BepInEx/LogOutput.log` with the report.
 
 ## Install
 

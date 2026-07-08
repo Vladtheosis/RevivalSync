@@ -2,6 +2,14 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.5
+
+- Config rebuilt for humans: section "1. Main" has plain on/off switches (Instant Carts /
+  Instant Doors / Instant Items / No Timeout Kicks / Smooth Enemies), "2. Fine-Tuning"
+  holds the numbers with plain-language explanations (defaults are good), "3. Debug" has
+  Verbose Logging for bug reports. NOTE: settings from older versions reset to defaults
+  once (the old entries are ignored); re-apply any personal tweaks in the new sections
+
 # 1.1.4
 
 - Tool straightening is now strong: it was switching itself off whenever the host's copy
