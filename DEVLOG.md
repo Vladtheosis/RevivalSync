@@ -77,3 +77,21 @@ Reference for contributors (and future debugging). Chronological-ish, distilled.
   saved configs keep old values; changed defaults only apply to fresh installs.
 - Suspected third-party interference historically: discjenny-CartSpeedSync (removed),
   GodCommands (untested variable).
+
+## 1.0.6 — velocity-steering, not position-forcing (the vibration lesson)
+
+Symptom: everything vibrating "like a phone at 300%" while synced (packets healthy, no
+errors). Cause: TickShadow ran MovePosition + velocity writes on DYNAMIC rigidbodies every
+physics tick. MovePosition on a dynamic body teleports it each step, fighting its own
+physics integration 50x/s, while the blend target itself resets with every packet
+(lead = hostVel * packetAge sawtooths) and with Photon clock noise in the lag estimate.
+Their RateSmoothing=1 config experiment did the same to the Hermite rate estimate for
+non-registered objects (enemies/players) — every measured interval REPLACED the estimate.
+
+Fix (the rule to keep): corrections steer VELOCITY (fold position error into the velocity
+target: desiredVel = targetVel + clamp(posErr * gain)), with a 2cm/1° deadband so settled
+objects never chase packet noise. Position forcing (MovePosition lerp) only for >1.5m
+divergence (convergence guarantee) and host-kinematic objects. Held drift corrections are
+acceleration nudges (velocity += clamp(err,3) * 2.5 * dt). Lag estimate clamped to 0.3s.
+Post-throw: velocity blend drops to 0.08/tick or it would yank predicted throws toward
+stale host velocity.

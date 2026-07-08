@@ -241,7 +241,8 @@ namespace RevivalSync
                     st.hostKinematic = kinematic;
                     st.hostVel = vel;
                     st.hostAngVel = angVel;
-                    float lag = Mathf.Abs((float)(PhotonNetwork.Time - networkTime / 1000.0));
+                    // clamped: Photon clock noise must not kick host positions around
+                    float lag = Mathf.Min(Mathf.Abs((float)(PhotonNetwork.Time - networkTime / 1000.0)), 0.3f);
                     st.hostPos = pos + dir * lag;
                     st.hostRot = rot;
                     st.hasHostState = true;
@@ -583,7 +584,10 @@ namespace RevivalSync
 
             if (drift > correctAt)
             {
-                st.rb.position = Vector3.Lerp(st.rb.position, ledHostPos, 0.05f);
+                // acceleration-style nudge instead of a raw position write: it composes
+                // with the cart drive and renders smoothly through rigidbody interpolation
+                st.rb.velocity += Vector3.ClampMagnitude(ledHostPos - st.rb.position, 3f)
+                                  * (2.5f * Time.fixedDeltaTime);
             }
 
             DebugHeld(st, grabber, drift, speed);
@@ -781,17 +785,42 @@ namespace RevivalSync
             }
 
             float a = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
+            float velBlend = 0.5f;
             if (st.postThrowTimer > 0f)
             {
-                a *= 0.3f; // let our locally-predicted throw fly; correct gently at first
+                a *= 0.3f;        // let our locally-predicted throw fly; correct gently
+                velBlend = 0.08f; // and don't yank its velocity toward stale host data
             }
 
-            // MovePosition/MoveRotation respect rigidbody interpolation — direct
-            // rb.position writes render as visible stepping
-            st.rb.MovePosition(Vector3.Lerp(st.rb.position, targetPos, a));
-            st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, a));
-            st.rb.velocity = Vector3.Lerp(st.rb.velocity, targetVel, a);
-            st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, a);
+            // Correct through VELOCITY, not per-tick position writes: MovePosition on a
+            // dynamic body fights its own physics integration 50x/s and renders as
+            // vibration ("phone on max"). Folding the position error into the velocity
+            // target lets the body glide to the host state and keeps rigidbody
+            // interpolation smooth.
+            Vector3 posErr = targetPos - st.rb.position;
+            if (posErr.sqrMagnitude < 2.25f) // within 1.5m: normal operation
+            {
+                Vector3 desiredVel = targetVel;
+                if (posErr.sqrMagnitude > 0.0004f) // 2cm deadband: don't chase packet noise
+                {
+                    desiredVel += Vector3.ClampMagnitude(posErr * (a * 25f), 4f);
+                }
+                st.rb.velocity = Vector3.Lerp(st.rb.velocity, desiredVel, velBlend);
+            }
+            else
+            {
+                // far off: position blending guarantees convergence through geometry
+                // (the wedge and snap handling above covers the pathological cases)
+                st.rb.MovePosition(Vector3.Lerp(st.rb.position, targetPos, a));
+                st.rb.velocity = Vector3.Lerp(st.rb.velocity, targetVel, a);
+            }
+
+            // rotation gets a small deadband too, so settled objects never shimmer
+            if (Quaternion.Angle(st.rb.rotation, st.hostRot) > 1f)
+            {
+                st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, a));
+                st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, a);
+            }
         }
 
         /// <summary>Called from the hinge collision hook: if the local player or something

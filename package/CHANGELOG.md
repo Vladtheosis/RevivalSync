@@ -4,6 +4,21 @@
 
 > **HIGHLY EXPERIMENTAL — testing phase. Prone to game-breaking bugs. Not for normal play.**
 
+# 1.0.6
+
+- Fixed world-wide vibration/jitter ("phone on max"): sync corrections were forcing object
+  positions every physics tick, fighting the physics engine 50x a second while chasing a
+  target that resets with every network packet. Corrections now steer velocity instead —
+  objects glide to the host's state and rigidbody interpolation stays smooth. Position
+  forcing only remains for large divergences (guaranteed convergence) and host-kinematic
+  objects
+- Held-object drift corrections are now smooth velocity nudges too (no position stepping)
+- Objects that are already in sync get a small deadband: no more micro-shimmer from
+  chasing per-packet noise while at rest
+- The network lag estimate is clamped so Photon clock noise can't kick host positions around
+- Note: if you tuned SmoothSync RateSmoothing up, set it back to 0.1 — at 1.0 the update-rate
+  estimate follows every packet-timing wobble and makes enemies/players jitter
+
 # 1.0.5
 
 - Pushing doors open with a cart (or your body, or held loot) no longer fights the sync:
