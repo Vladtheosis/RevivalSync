@@ -298,11 +298,11 @@ namespace RevivalSync
             }
             if (!st.isHinge && st.cart == null && pgo.GetComponentInParent<ItemAttributes>() != null)
             {
-                // items orient themselves in hand through master-gated scripts. Guns and
-                // melee run that logic locally (authority transpiler); every other gadget
-                // mirrors the host's already-straightened rotation while held instead.
-                st.mirrorHeldRot = pgo.GetComponentInChildren<ItemGun>(true) == null
-                                && pgo.GetComponentInChildren<ItemMelee>(true) == null;
+                // items orient themselves in hand through master-gated scripts the host
+                // runs on our behalf — mirror its straightened rotation while held.
+                // (Running the game's orientation code locally was tried in 1.1.0 and
+                // fights the client-side grab physics: weapons buzzed hard.)
+                st.mirrorHeldRot = true;
             }
 
             // seed from whatever the transform view last received, so we have a sane
@@ -722,6 +722,12 @@ namespace RevivalSync
                 return;
             }
 
+            // A fresh local throw: the host still thinks the object is in our hand, so
+            // ANY correction drags the flight backward toward stale data ("moves so
+            // weirdly"). Pure local physics for the grace period (config PostThrowGrace);
+            // the regular glide reconciles whatever small difference remains afterwards.
+            if (st.postThrowTimer > 0f) return;
+
             // Photon only sends packets when an object's data CHANGES. Silence therefore
             // means "the host's copy is exactly at hostPos, at rest" — treating stale
             // velocities as live is what made shadowed objects vibrate and drift.
@@ -804,12 +810,7 @@ namespace RevivalSync
             }
 
             float a = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
-            float velBlend = 0.5f;
-            if (st.postThrowTimer > 0f)
-            {
-                a *= 0.3f;        // let our locally-predicted throw fly; correct gently
-                velBlend = 0.08f; // and don't yank its velocity toward stale host data
-            }
+            const float velBlend = 0.5f;
 
             // Correct through VELOCITY, not per-tick position writes: MovePosition on a
             // dynamic body fights its own physics integration 50x/s and renders as

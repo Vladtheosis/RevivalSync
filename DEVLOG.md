@@ -113,3 +113,21 @@ Convergence: removed the far-branch MovePosition entirely (jiggle source); one
 distance-scaled velocity law now covers all divergences: gain = a*25*(1+2*errMag),
 correction clamped 10 m/s. Multi-meter gaps close in ~0.4s, smoothly. Position writes on
 dynamic bodies remain ONLY in Snap() and the host-kinematic branch (correct usage).
+
+## 1.1.1 - the weapon-orientation lesson (do NOT transpile item scripts)
+
+1.1.0 shipped two approaches side by side and the playtest was a perfect A/B:
+- ItemGun/ItemMelee orientation methods transpiled to run locally -> violent vibration
+  ("fighting with the host" feel, but it is actually fighting the CLIENT-side grab
+  physics; plain-loot torque is weak so the same fight is invisible on valuables,
+  weapon torque overrides are strong: OverrideTorqueStrength(2)+AngularDrag(20)).
+- Everything else mirroring the HOST rotation while held (slerp 0.12, 2deg deadband,
+  skip when heldHostIdle) -> perfectly fine.
+Conclusion: mirror rotation for ALL held items; never run item orientation scripts
+locally. The transpiler TargetMethods has a NOTE.
+
+Throws: post-throw grace must be PURE local physics (early return before target math in
+TickShadow, after teleport handling). Any correction during the grace drags the flight
+toward stale "still in your hand" host data, and the host-kinematic branch could force
+a fresh throw kinematic. Softened-blend variants (a*0.3, velBlend 0.08) were still too
+strong once corrections became distance-scaled.

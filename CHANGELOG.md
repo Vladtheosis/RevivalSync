@@ -2,6 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.1
+
+- Fixed held weapons vibrating violently (1.1.0 regression): running the game's weapon
+  orientation code locally fights the client-side grab physics. Weapons now mirror the
+  host's straightened rotation instead, like every other gadget — straight in hand, no fight
+- Fixed thrown objects "moving weirdly": right after a throw the host still thinks the
+  object is in your hand, and corrections dragged the flight toward that stale data.
+  Throws now fly on pure local physics for the grace period (config: PostThrowGrace),
+  then reconcile smoothly
+
 # 1.1.0 — first stable release
 
 - Held weapons now straighten out in your hand like they do for the host: guns and melee
