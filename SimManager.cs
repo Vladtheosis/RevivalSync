@@ -625,15 +625,19 @@ namespace RevivalSync
             // what shoved the tool off-straight — heavily damp rotation, then steer
             // angular velocity toward the host's rotation, unopposed. Manual rotation
             // (rotate key) gets priority, exactly like the game's gun code does it.
-            if (st.mirrorHeldRot && !heldHostIdle && !grabber.isRotating)
+            // NOTE: no heldHostIdle gate here — a stale rotation is still the right
+            // target (the host's straightened pose doesn't expire like positions do).
+            // Gating on packet freshness let the game's torque shove the tool crooked
+            // whenever the host's copy rested ("straightens but really weak").
+            if (st.mirrorHeldRot && !grabber.isRotating)
             {
                 st.pgo.OverrideTorqueStrength(0.02f);
-                st.pgo.OverrideAngularDrag(25f);
+                st.pgo.OverrideAngularDrag(15f);
                 (st.hostRot * Quaternion.Inverse(st.rb.rotation)).ToAngleAxis(out float mAngle, out Vector3 mAxis);
                 if (mAngle > 180f) mAngle -= 360f;
                 if (Mathf.Abs(mAngle) > 1f && !float.IsInfinity(mAxis.x))
                 {
-                    Vector3 mirrorAngVel = Vector3.ClampMagnitude(Mathf.Deg2Rad * mAngle * mAxis.normalized * 6f, 8f);
+                    Vector3 mirrorAngVel = Vector3.ClampMagnitude(Mathf.Deg2Rad * mAngle * mAxis.normalized * 10f, 12f);
                     st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, mirrorAngVel, 0.5f);
                 }
             }

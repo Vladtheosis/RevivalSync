@@ -2,6 +2,13 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.4
+
+- Tool straightening is now strong: it was switching itself off whenever the host's copy
+  rested (no packets = no hold, and the game's torque crept the tool crooked again). The
+  host's straightened rotation doesn't expire like positions do — the hold is now
+  constant while you carry the tool, with roughly twice the corrective strength
+
 # 1.1.3
 
 - Held tools now STAY straight: the game's default grab torque wants a different
