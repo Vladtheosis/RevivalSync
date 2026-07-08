@@ -1,0 +1,9 @@
+{
+    "name": "RevivalSync",
+    "version_number": "1.0.1",
+    "website_url": "",
+    "description": "[HIGHLY EXPERIMENTAL - expect game-breaking bugs, not for normal play] Singleplayer-feel multiplayer for R.E.P.O. Made by Revival.",
+    "dependencies": [
+        "BepInEx-BepInExPack-5.4.2100"
+    ]
+}

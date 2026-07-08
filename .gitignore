@@ -1,0 +1,13 @@
+# build output
+bin/
+obj/
+
+# machine-specific game/BepInEx paths (copy LocalPaths.props.example to LocalPaths.props)
+LocalPaths.props
+
+# packaging leftovers
+*.zip
+
+# NEVER commit tokens or secrets of any kind
+*token*
+*.secret

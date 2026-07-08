@@ -1,0 +1,9 @@
+<!-- Copy this file to LocalPaths.props (gitignored) and point it at YOUR install. -->
+<Project>
+  <PropertyGroup>
+    <!-- folder containing Assembly-CSharp.dll and the Photon dlls -->
+    <GameManaged>C:\Program Files (x86)\Steam\steamapps\common\REPO\REPO_Data\Managed</GameManaged>
+    <!-- folder containing BepInEx.dll and 0Harmony.dll (game install or mod-manager profile) -->
+    <BepInExCore>C:\Program Files (x86)\Steam\steamapps\common\REPO\BepInEx\core</BepInExCore>
+  </PropertyGroup>
+</Project>
