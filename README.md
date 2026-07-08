@@ -2,6 +2,10 @@
 
 Made by **Revival**
 
+**Source code — help welcome:** https://github.com/Vladtheosis/RevivalSync
+(issues, bug reports with logs, and pull requests are all appreciated; see `DEVLOG.md` there
+for the architecture and lessons learned)
+
 > ## ⚠️ HIGHLY EXPERIMENTAL — NOT FOR NORMAL PLAY
 > This mod is in an active testing phase and is **prone to many game-breaking bugs**:
 > desynced objects, broken carts and doors, loot behaving differently for each player,

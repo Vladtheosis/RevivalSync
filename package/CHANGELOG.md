@@ -1,5 +1,7 @@
 *Made by Revival*
 
+**Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
+
 > **HIGHLY EXPERIMENTAL — testing phase. Prone to game-breaking bugs. Not for normal play.**
 
 # 1.0.3
