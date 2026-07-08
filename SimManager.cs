@@ -364,6 +364,23 @@ namespace RevivalSync
                 : Plugin.PostThrowGrace.Value;
             pgoIsMaster(pgo) = false;
 
+            // NetworkingReworked's release trick (its SyncAfterRelease/OverwriteStoredNetworkData):
+            // overwrite the cached host state with our own release state. The host's
+            // "still in your hand" data is exactly the stale reference that made fresh
+            // throws stop mid-air once corrections resumed — from here on we correct
+            // against our own throw until real packets (which include it) arrive.
+            if (st.hasHostState && st.rb != null)
+            {
+                st.hostPos = st.rb.position;
+                st.hostRot = st.rb.rotation;
+                st.hostVel = st.rb.velocity;
+                st.hostAngVel = st.rb.angularVelocity;
+                st.hostSleeping = false;
+                st.hostKinematic = false;
+                st.hostTeleport = false;
+                st.lastPacketTime = Time.unscaledTime;
+            }
+
             if (Plugin.VerboseLogging.Value)
             {
                 Plugin.Log.LogInfo($"Released grab authority: {pgo.name}");
@@ -602,11 +619,18 @@ namespace RevivalSync
             }
 
             // gadgets without local orientation logic: the host runs their straightening
-            // scripts on our behalf — mirror the resulting rotation (position stays local)
-            if (st.mirrorHeldRot && !heldHostIdle
-                && Quaternion.Angle(st.rb.rotation, st.hostRot) > 2f)
+            // scripts on our behalf. Steer ANGULAR VELOCITY toward its rotation instead of
+            // forcing the transform — MoveRotation fought the grab torque every tick,
+            // which was the residual held-tool jitter. Position stays local.
+            if (st.mirrorHeldRot && !heldHostIdle)
             {
-                st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, 0.12f));
+                (st.hostRot * Quaternion.Inverse(st.rb.rotation)).ToAngleAxis(out float mAngle, out Vector3 mAxis);
+                if (mAngle > 180f) mAngle -= 360f;
+                if (Mathf.Abs(mAngle) > 3f && !float.IsInfinity(mAxis.x))
+                {
+                    Vector3 mirrorAngVel = Vector3.ClampMagnitude(Mathf.Deg2Rad * mAngle * mAxis.normalized * 3f, 6f);
+                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, mirrorAngVel, 0.25f);
+                }
             }
 
             DebugHeld(st, grabber, drift, speed);
@@ -761,11 +785,25 @@ namespace RevivalSync
                     st.localPushTimer -= Time.fixedDeltaTime;
                     return;
                 }
-                if (Quaternion.Angle(st.rb.rotation, st.hostRot) > 0.5f)
+                // NetworkingReworked's door model: hinges run the game's own logic fully
+                // locally, and continuous rotation sync only FIGHTS it ("opening stuff is
+                // delayed"). A door in local motion belongs to local physics; we only
+                // follow the host when ITS copy is moving while ours rests (another player
+                // using the door), and gently reconcile long-idle disagreement.
+                if (st.rb.angularVelocity.sqrMagnitude > 0.25f) return;
+                float hingeAngle = Quaternion.Angle(st.rb.rotation, st.hostRot);
+                if (!hostIdle)
                 {
-                    float ha = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
-                    st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, ha));
-                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, ha);
+                    if (hingeAngle > 0.5f)
+                    {
+                        float ha = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
+                        st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, ha));
+                        st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, ha);
+                    }
+                }
+                else if (hingeAngle > 10f)
+                {
+                    st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, 0.05f));
                 }
                 return;
             }

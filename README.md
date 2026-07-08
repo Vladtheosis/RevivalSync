@@ -10,6 +10,10 @@ One mod that makes R.E.P.O. multiplayer feel like singleplayer — the successor
 merger of) NetworkingRevived and NetworkTweaksRevived, rebuilt on the architecture of the
 original NetworkingReworked with its host-state capture technique.
 
+**Credits:** several core techniques are adopted from **readthisifbad's NetworkingReworked**
+— the raw host-state capture, the fully-local door model with event-level reconciliation,
+and the release-state overwrite that makes throws fly clean. Thank you.
+
 ## What it does (client-side only — works with unmodded hosts)
 
 - **Instant grabs**: valuables, props, shop items and carts respond the moment you grab

@@ -2,6 +2,22 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.2
+
+Three fixes powered by studying the original NetworkingReworked's code (credit:
+readthisifbad — techniques adopted with thanks):
+
+- Thrown objects no longer stop mid-air when the throw grace ends: on release, the cached
+  host state is overwritten with our own release state (NetworkingReworked's trick), so
+  corrections never reference the host's stale "still in your hand" data
+- Opening doors/cabinets is no longer delayed: a door in local motion now belongs entirely
+  to local physics (NetworkingReworked's door model) — continuous rotation sync was
+  fighting the locally-running hinge logic. The host is followed only when *its* door moves
+  while yours rests (another player using it), plus a gentle long-idle reconcile
+- Held tools' residual jitter fixed: the rotation mirror now steers angular velocity
+  instead of forcing the transform each tick, so it cooperates with the grab physics
+  instead of fighting it
+
 # 1.1.1
 
 - Fixed held weapons vibrating violently (1.1.0 regression): running the game's weapon

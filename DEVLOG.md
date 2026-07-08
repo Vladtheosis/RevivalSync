@@ -131,3 +131,28 @@ TickShadow, after teleport handling). Any correction during the grace drags the 
 toward stale "still in your hand" host data, and the host-kinematic branch could force
 a fresh throw kinematic. Softened-blend variants (a*0.3, velBlend 0.08) were still too
 strong once corrections became distance-scaled.
+
+## 1.1.2 - what the original NetworkingReworked (0.2.2, readthisifbad) actually did
+
+Decompiled it properly (scratchpad nr-decomp, regenerable: Thunderstore
+readthisifbad/NetworkingReworked + ilspycmd). Techniques adopted with credit:
+
+1. RELEASE: SyncAfterRelease/OverwriteStoredNetworkData rewrites the PTV network state to
+   the local rb state at release -> no stale in-hand reference. Ours: EndLocalGrab seeds
+   st.host* from rb + lastPacketTime=now. (They went further: DelayedReleasePatch skips
+   GrabEnded, performs it locally, keeps streaming beam data so the HOST releases from the
+   right spot - PreventPhysGrabBeamDeactivatePre. Not adopted; RPC-shape risky post-security-update.)
+2. DOORS: full local reimplementation of PhysGrabHinge.FixedUpdate on clients, NO continuous
+   rotation sync; their clients SENT OpenImpulseRPC/CloseImpulseRPC to everyone (would likely
+   trip modern SemiFunc.MasterOnlyRPC guards - the game's own CloseImpulseRPC now checks it).
+   Ours: local motion owns the door; follow host only when host moves and we rest.
+3. THEY NEVER SIMULATED TOOLS: BlockedItems = ItemBattery/ItemGun/ItemRubberDuck/
+   ItemGrenade*/ItemDrone*/ItemUpgrade* + enemies + tumbled players + hinges(from ownership).
+   Their tools were vanilla-laggy but stable. We simulate them with position-local +
+   host-rotation mirror via ANGULAR VELOCITY steering (never MoveRotation - fights grab torque).
+4. Their ownership core: PhotonView.IsMine postfixed to true for simulated views + transpilers
+   rewrote even isMaster FIELD READS to photonView.IsMine (OverrideTimersTick transpiler).
+5. Melee swings: ItemMelee.OnPhotonSerializeView prefix consumes isSwinging stream and calls
+   ActivateHitbox() on swing start - the answer if melee hits ever feel wrong for clients.
+6. Their passive sync = raw rb.position/rotation/velocity lerps at 0.075, gated off while
+   locally grabbed or riding a held cart; release used staged coroutine re-sync (SlowSyncCartRoutine).
