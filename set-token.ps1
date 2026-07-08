@@ -26,12 +26,12 @@ $token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
     [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
 if ([string]::IsNullOrWhiteSpace($token)) { throw "No token entered." }
 
-$token | gh secret set THUNDERSTORE_TOKEN --repo $repo
+$token | gh secret set TCLI_AUTH_TOKEN --repo $repo
 $token = $null
 if ($LASTEXITCODE -ne 0) { throw "Failed to set the secret." }
 
 Write-Host ""
-Write-Host "Done! THUNDERSTORE_TOKEN is stored (encrypted) in $repo."
+Write-Host "Done! TCLI_AUTH_TOKEN is stored (encrypted) in $repo."
 Write-Host "Publishing a release is now:"
 Write-Host "    .\update-package.ps1"
 Write-Host "    git add -A ; git commit -m 'release'"

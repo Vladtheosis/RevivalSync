@@ -4,7 +4,7 @@ name: Publish Mod
 # The tag name is used as the package version, so tag with plain SemVer like: 1.0.2
 #
 # SECURITY: the Thunderstore token lives ONLY in the repo's encrypted Actions secrets
-# (Settings -> Secrets and variables -> Actions -> THUNDERSTORE_TOKEN).
+# (Settings -> Secrets and variables -> Actions -> TCLI_AUTH_TOKEN).
 # NEVER write the token into this file or anywhere else in the repo.
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
           namespace: Revival # the Thunderstore 'team' to publish under
           name: RevivalSync
           description: '[HIGHLY EXPERIMENTAL - expect game-breaking bugs] Singleplayer-feel multiplayer for R.E.P.O. Made by Revival.'
-          token: ${{ secrets.THUNDERSTORE_TOKEN }}
+          token: ${{ secrets.TCLI_AUTH_TOKEN }}
           version: ${{ github.ref_name }} # tag name = package version
           community: repo
           path: package # only the built files in package/ are shipped (README + icon come from repo root)
