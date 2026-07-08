@@ -11,6 +11,9 @@
   then settles back to the host's state after — no more delayed/buggy door shoving
 - Held objects no longer trust stale velocity data when the host pauses sending
   (a subtle source of weird cart corrections)
+- When the host stops sending entirely (game hang, host quitting, connection loss), the sync
+  no longer pins everything to the host's frozen last-known state — carts, doors and loot
+  stay fully usable locally until data flows again (the "everything was stuck" freeze)
 
 # 1.0.4
 

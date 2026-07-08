@@ -65,6 +65,12 @@ namespace RevivalSync
 
         internal static bool Ready { get; private set; }
         internal static int PacketsCaptured; // diagnostics
+        private static float lastCaptureTime = -999f;
+
+        /// <summary>True when the host has gone silent for EVERY object at once — game hung,
+        /// player leaving, or dead connection. A single quiet object just means its host copy
+        /// is at rest; world-wide silence means there is nothing live to sync toward.</summary>
+        internal static bool HostStalled => Time.unscaledTime - lastCaptureTime > 2f;
 
         // ---- reflection accessors into game internals ----
         private static AccessTools.FieldRef<PhysGrabObject, bool> pgoIsMaster;
@@ -240,6 +246,7 @@ namespace RevivalSync
                     st.hostRot = rot;
                     st.hasHostState = true;
                     st.lastPacketTime = Time.unscaledTime;
+                    lastCaptureTime = Time.unscaledTime;
                     PacketsCaptured++;
                     return;
                 }
@@ -517,6 +524,17 @@ namespace RevivalSync
             }
             st.hostTeleport = false; // we own it; ignore teleports until release
 
+            // A host that has gone silent everywhere cannot acknowledge our motion —
+            // correcting toward its frozen last-known position just pins the object in
+            // place (the "everything was stuck" freeze when the host hangs or quits).
+            if (HostStalled)
+            {
+                st.desyncTimer = 0f;
+                st.stuckTimer = 0f;
+                DebugHeld(st, grabber, -1f, st.rb.velocity.magnitude);
+                return;
+            }
+
             // The host's copy ALWAYS trails us by (speed x lag) while we drag — that trail is
             // normal and must not be "corrected", or the correction acts as a permanent brake.
             // Allow a velocity-proportional trail and compare against a velocity-led host
@@ -663,6 +681,11 @@ namespace RevivalSync
             }
 
             if (!st.hasHostState) return;
+
+            // world-wide packet silence (host stalled/leaving): blending toward the frozen
+            // last-known state pins every object the player bumps — pure local physics
+            // until data flows again
+            if (HostStalled) return;
 
             if (st.postThrowTimer > 0f)
             {
