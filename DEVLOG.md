@@ -1,0 +1,79 @@
+# RevivalSync — Development Log & Hard-Won Lessons
+
+Reference for contributors (and future debugging). Chronological-ish, distilled.
+
+## Lineage
+- Successor/merger of two mods: **NetworkingRevived** (rewrite of the abandoned
+  `readthisifbad-NetworkingReworked`) and **NetworkTweaksRevived** (rewrite of
+  `BlueAmulet-REPONetworkTweaks`). Decompiled sources of both originals were studied heavily.
+- Why the originals broke: the game's overcharge update added a 6th field
+  (`physGrabBeamOverCharge`) to PhysGrabber's photon stream (NetworkingReworked re-wrote that
+  stream with 5 fields = packet corruption); RPC security guards (`SemiFunc.MasterOnlyRPC` /
+  `OwnerOnlyRPC`) were added; IL-pattern transpilers died on recompiled code.
+
+## Architecture (from the original NetworkingReworked — the thing that made it feel great)
+- **Passive shadowing**: every eligible PhysGrabObject is locally simulated from spawn;
+  while not locally held it is continuously blended toward the host's state (~0.075/tick).
+  No puppet<->simulation handoffs — handoff seams were the source of most desync bugs.
+- Local grab = instant authority: add self to `playerGrabbing` immediately, flip the private
+  `isMaster` field so `PhysicsGrabbingManipulation` runs, dedupe the host's later broadcast.
+- Host state captured at **`PhotonNetwork.OnSerializeRead`** (raw event array; data[0]=viewID,
+  component data from index 3; pattern-scan for [bool,bool,bool,V3,V3,V3,V3,Quat] which
+  self-aligns past other components' segments). Per-component capture proved unreliable.
+- `PhotonTransformView` suppressed for simulated objects (Update prefix skip; serialize read
+  = consume-and-discard 8 values to keep the stream aligned).
+- Excluded from simulation: enemies, tumbled players, shop/inventory items (ItemAttributes).
+
+## The two foundational platform gotchas (cost days)
+1. **Never touch OR Harmony-patch `PhotonNetwork` during plugin load.** Its static ctor spawns
+   the PhotonMono dispatcher; created during chainloading it silently kills ALL connectivity
+   (game hangs at "connecting", zero errors — looks like no internet). Even patching one of
+   its methods triggers the ctor. Fix: defer via `PhotonHandler.Awake` postfix
+   (`PhotonReady` flag) + lazy `EnsureCapturePatch()`.
+2. **This game never runs Update/FixedUpdate on mod-created GameObjects or on the BepInEx
+   plugin component** (proven with filesystem markers). Every "driver loop" before v1.0.2 was
+   silently dead — the entire passive-sync machinery never executed; only Harmony patches ran.
+   Fix: drive loops via postfixes on `GameDirector.Update` (frame) and
+   `PlayerController.FixedUpdate` (physics), with frameCount/fixedTime double-run guards.
+   Corollary: all pre-1.0.2 "this feature doesn't work" verdicts were meaningless.
+   Also: AsyncLoggers buffers the log — hard-killing the game eats the tail; verify with
+   graceful close or file markers.
+
+## Sync-tuning lessons
+- **Photon sends only on change**: no packets = host copy at rest exactly at last hostPos.
+  Blending toward stale velocities makes objects vibrate/drift ("choppy"). `hostIdle`
+  (packetAge > 0.35s) => zero target velocities & settle; while flowing, lead the target by
+  packetAge. Use `MovePosition/MoveRotation` for blends (interpolation-aware); raw
+  `rb.position` writes render as stepping (keep them only for snaps).
+- **Held drift correction must be velocity-aware**: the host's copy ALWAYS trails a dragged
+  object by speed*lag; correcting that trail = permanent brake (the "ultra slow cart").
+  Allowance = speed*0.4, target led by hostVel*0.15; handback (vanilla control until re-grab)
+  when truly diverged.
+- **Carts aren't moved by grab forces when handle-held** — `CartSteer` directly drives
+  velocity toward a follow point (5/7 m/s caps) and disables grab forces
+  (`OverridePhysGrabForcesDisable`); its client-side preconditions are unreliable, so the
+  drive is replicated locally — but ONLY for handle grabs (grab-area list check): body/"weak"
+  drags are raw-force on the host and steering them locally desyncs hard.
+- **Cart cargo riding a locally-held cart must be exempt from passive sync** (riding markers
+  via `itemsInCart`), or it anchors the cart and tunnels through walls.
+- **Doors**: vanilla clients destroy the HingeJoint and the host force-flags doors kinematic
+  (`KinematicClientForce` each tick). Simulating them = keep the joint (operand-swap the
+  `SemiFunc.IsNotMasterClient` call in `PhysGrabHinge.Awake`), make it unbreakable (host
+  decides breaks; mirror the `broken` field), set `pgo.spawned=true` (gates hinge logic),
+  and run the game's OWN hinge logic locally via the authority transpiler on
+  `PhysGrabHinge.FixedUpdate`. The "door spring" is actually host-gated close-torque code
+  in that method — don't fight it, run it.
+- Stuck-in-geometry objects need a timed Snap (blending can't push through walls).
+- kinematicClientForced pollutes streamed `isKinematic` — ignore it for held-object logic.
+
+## Ops
+- Build: `dotnet build -c Release` (game/BepInEx paths via gitignored `LocalPaths.props`).
+- `update-package.ps1` = build + refresh `package/` + local TMM profile + upload zip in `bin/`.
+- Publish: bump version in Plugin.cs + manifest.json + csproj + CHANGELOG, then upload zip
+  manually OR `git tag <version>; git push --tags` (GitHub Actions -> Thunderstore; token
+  lives ONLY in the repo's Actions secret THUNDERSTORE_TOKEN).
+- Thunderstore rejects duplicate version numbers. Community slug: `repo`, team: `Revival`.
+- Verbose diagnostics: `[reg] [mode] [held] [snap] [throw] [dedupe] [stats] [hinge]` — note
+  saved configs keep old values; changed defaults only apply to fresh installs.
+- Suspected third-party interference historically: discjenny-CartSpeedSync (removed),
+  GodCommands (untested variable).
