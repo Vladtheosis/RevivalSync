@@ -16,3 +16,15 @@ if (Test-Path $profilePlugins) {
     Copy-Item "$PSScriptRoot\bin\Release\RevivalSync.dll","$PSScriptRoot\README.md","$PSScriptRoot\CHANGELOG.md","$PSScriptRoot\manifest.json","$PSScriptRoot\icon.png" $profilePlugins -Force
     Write-Output "local profile updated: $profilePlugins"
 }
+
+# build the zip for MANUAL upload on thunderstore.io (Develop > Upload Package)
+$version = (Get-Content "$PSScriptRoot\manifest.json" -Raw | ConvertFrom-Json).version_number
+$staging = "$PSScriptRoot\bin\zip-staging"
+if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+New-Item -ItemType Directory -Force $staging | Out-Null
+Copy-Item "$PSScriptRoot\bin\Release\RevivalSync.dll","$PSScriptRoot\README.md","$PSScriptRoot\CHANGELOG.md","$PSScriptRoot\manifest.json","$PSScriptRoot\icon.png" $staging -Force
+$zip = "$PSScriptRoot\bin\Revival-RevivalSync-$version.zip"
+if (Test-Path $zip) { Remove-Item $zip -Force }
+Compress-Archive -Path "$staging\*" -DestinationPath $zip
+Remove-Item $staging -Recurse -Force
+Write-Output "upload-ready zip: $zip"
