@@ -11,3 +11,5 @@ LocalPaths.props
 # NEVER commit tokens or secrets of any kind
 *token*
 *.secret
+# ...but the helper script that PROMPTS for the token (contains no secret) is fine
+!set-token.ps1
