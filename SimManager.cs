@@ -30,6 +30,9 @@ namespace RevivalSync
             public PhotonTransformView ptv;
             public Rigidbody rb;
             public PhysGrabCart cart;       // set when this object IS a cart
+            public bool isHinge;            // doors/cabinets: local joint + the game's own hinge logic
+            public PhysGrabHinge hinge;
+            public HingeJoint joint;        // kept alive locally; unbreakable (host decides breaks)
             public int viewId;
 
             public bool localGrab;          // held by the local player right now
@@ -40,7 +43,6 @@ namespace RevivalSync
             public int ridingTick;          // == current tick when sitting inside a locally-held cart
 
             public bool hasHostState;
-            public float staleWarnTimer;    // rate limit for no-packets warnings
             public float lastPacketTime = -999f;
             public Vector3 hostPos;
             public Quaternion hostRot = Quaternion.identity;
@@ -69,7 +71,9 @@ namespace RevivalSync
         private static AccessTools.FieldRef<PhysGrabber, PhysGrabObject> grabberObject;
         private static AccessTools.FieldRef<PhysGrabCart, List<PhysGrabObject>> cartItems;
         private static AccessTools.FieldRef<PhysGrabCart, Transform> cartInCart;
+        private static AccessTools.FieldRef<PhysGrabCart, PhysGrabObjectGrabArea> cartGrabArea;
         private static AccessTools.FieldRef<PlayerAvatar, bool> avatarSprinting;
+        private static AccessTools.FieldRef<PhysGrabHinge, bool> hingeBroken;
         private static MethodInfo pgoThrow;
 
         private static AccessTools.FieldRef<PhotonTransformView, Vector3> ptvNetPos;
@@ -100,7 +104,9 @@ namespace RevivalSync
                 grabberObject = AccessTools.FieldRefAccess<PhysGrabber, PhysGrabObject>("grabbedPhysGrabObject");
                 cartItems = AccessTools.FieldRefAccess<PhysGrabCart, List<PhysGrabObject>>("itemsInCart");
                 cartInCart = AccessTools.FieldRefAccess<PhysGrabCart, Transform>("inCart");
+                cartGrabArea = AccessTools.FieldRefAccess<PhysGrabCart, PhysGrabObjectGrabArea>("physGrabObjectGrabArea");
                 avatarSprinting = AccessTools.FieldRefAccess<PlayerAvatar, bool>("isSprinting");
+                hingeBroken = AccessTools.FieldRefAccess<PhysGrabHinge, bool>("broken");
                 pgoThrow = AccessTools.Method(typeof(PhysGrabObject), "Throw");
 
                 ptvNetPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("m_NetworkPosition");
@@ -194,7 +200,7 @@ namespace RevivalSync
             if (o.GetComponent<PlayerTumble>() != null) return false;
             if (o.GetComponentInParent<Enemy>() != null) return false;
             if (o.GetComponentInParent<EnemyRigidbody>() != null) return false;
-            if (o.GetComponentInParent<PhysGrabHinge>() != null) return false;
+            if (o.GetComponentInParent<PhysGrabHinge>() != null) return Plugin.SimulateHinges.Value;
             if (o.GetComponentInParent<ItemAttributes>() != null) return false;
             return true;
         }
@@ -259,8 +265,25 @@ namespace RevivalSync
                 ptv = ptv,
                 rb = pgo.rb,
                 cart = pgo.GetComponent<PhysGrabCart>(),
+                hinge = pgo.GetComponent<PhysGrabHinge>(),
                 viewId = view.ViewID,
             };
+            st.isHinge = st.hinge != null;
+            if (st.isHinge)
+            {
+                // the game's own hinge logic runs locally for these (FixedUpdate authority
+                // patch) — the joint must survive but never break on its own; the host
+                // decides breaks and we mirror them
+                st.joint = pgo.GetComponent<HingeJoint>();
+                if (st.joint != null)
+                {
+                    st.joint.breakForce = float.PositiveInfinity;
+                    st.joint.breakTorque = float.PositiveInfinity;
+                }
+                // hinge logic and hinge-point setup are gated on spawned, which vanilla
+                // never sets on clients
+                pgo.spawned = true;
+            }
 
             // seed from whatever the transform view last received, so we have a sane
             // target even before our own capture sees its first packet
@@ -472,6 +495,12 @@ namespace RevivalSync
             pgoIsMaster(st.pgo) = true; // keep asserting; game code can rewrite it
             EnsureDynamic(st);
 
+            if (st.isHinge)
+            {
+                CheckHingeBroken(st);
+                return; // joint-anchored: grab forces + the game's own hinge logic handle it
+            }
+
             if (st.cart != null)
             {
                 DriveHeldCart(st, grabber);
@@ -562,6 +591,12 @@ namespace RevivalSync
         private static void DriveHeldCart(SimState st, PhysGrabber grabber)
         {
             if (grabber.physGrabForcesDisabledTimer > 0f) return; // vanilla steer is active
+
+            // the game only steers HANDLE grabs — for body grabs ("weak" drag mode) the
+            // host uses plain grab forces, and steering locally would desync us hard
+            PhysGrabObjectGrabArea area = cartGrabArea(st.cart);
+            if (area == null || !area.listOfAllGrabbers.Contains(grabber)) return;
+
             PlayerAvatar avatar = grabber.playerAvatar;
             if (avatar == null || PlayerController.instance == null) return;
 
@@ -626,19 +661,6 @@ namespace RevivalSync
 
             if (!st.hasHostState) return;
 
-            // an awake, non-sleeping object should be receiving host packets — silence
-            // here means the capture is failing, which is exactly what we need to know
-            if (Plugin.VerboseLogging.Value && !st.hostSleeping && !st.rb.IsSleeping())
-            {
-                float age = Time.unscaledTime - st.lastPacketTime;
-                st.staleWarnTimer -= Time.fixedDeltaTime;
-                if (age > 3f && st.staleWarnTimer <= 0f)
-                {
-                    st.staleWarnTimer = 15f;
-                    Plugin.Log.LogWarning($"[stale] {st.pgo.name}: awake but no host packets for {age:F0}s");
-                }
-            }
-
             if (st.postThrowTimer > 0f)
             {
                 st.postThrowTimer -= Time.fixedDeltaTime;
@@ -651,16 +673,41 @@ namespace RevivalSync
                 return;
             }
 
-            if (st.hostKinematic)
+            // Photon only sends packets when an object's data CHANGES. Silence therefore
+            // means "the host's copy is exactly at hostPos, at rest" — treating stale
+            // velocities as live is what made shadowed objects vibrate and drift.
+            float packetAge = Time.unscaledTime - st.lastPacketTime;
+            bool hostIdle = packetAge > 0.35f;
+            // while packets flow, lead the target by the data's age so movement is
+            // continuous between packets instead of sawtoothing toward stale positions
+            Vector3 targetPos = hostIdle ? st.hostPos : st.hostPos + st.hostVel * Mathf.Min(packetAge, 0.25f);
+            Vector3 targetVel = hostIdle ? Vector3.zero : st.hostVel;
+            Vector3 targetAngVel = hostIdle ? Vector3.zero : st.hostAngVel;
+
+            if (st.hostKinematic && !st.isHinge)
             {
                 if (!st.rb.isKinematic) st.rb.isKinematic = true;
-                st.rb.MovePosition(st.hostPos);
+                st.rb.MovePosition(targetPos);
                 st.rb.MoveRotation(st.hostRot);
                 return;
             }
             if (st.rb.isKinematic) st.rb.isKinematic = false;
 
-            if (st.hostSleeping)
+            // doors/cabinets: anchored by their local joint and driven by the game's own
+            // (locally running) hinge logic — we only nudge the swing angle toward the host
+            if (st.isHinge)
+            {
+                CheckHingeBroken(st);
+                if (Quaternion.Angle(st.rb.rotation, st.hostRot) > 0.5f)
+                {
+                    float ha = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
+                    st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, ha));
+                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, ha);
+                }
+                return;
+            }
+
+            if (st.hostSleeping || hostIdle)
             {
                 if (st.rb.IsSleeping()) return; // both at rest — leave it alone (cheap)
                 if ((st.rb.position - st.hostPos).sqrMagnitude < 0.0025f
@@ -670,13 +717,13 @@ namespace RevivalSync
                     st.rb.angularVelocity = Vector3.zero;
                     st.rb.position = st.hostPos;
                     st.rb.rotation = st.hostRot;
-                    st.rb.Sleep();
+                    if (st.hostSleeping) st.rb.Sleep();
                     return;
                 }
                 // far from the host's rest pose: fall through and blend toward it
             }
 
-            float dist = Vector3.Distance(st.rb.position, st.hostPos);
+            float dist = Vector3.Distance(st.rb.position, targetPos);
             if (dist > Plugin.SnapDistance.Value)
             {
                 Snap(st, "beyond snap distance");
@@ -705,10 +752,29 @@ namespace RevivalSync
                 a *= 0.3f; // let our locally-predicted throw fly; correct gently at first
             }
 
-            st.rb.position = Vector3.Lerp(st.rb.position, st.hostPos, a);
-            st.rb.rotation = Quaternion.Slerp(st.rb.rotation, st.hostRot, a);
-            st.rb.velocity = Vector3.Lerp(st.rb.velocity, st.hostVel, a);
-            st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, st.hostAngVel, a);
+            // MovePosition/MoveRotation respect rigidbody interpolation — direct
+            // rb.position writes render as visible stepping
+            st.rb.MovePosition(Vector3.Lerp(st.rb.position, targetPos, a));
+            st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, a));
+            st.rb.velocity = Vector3.Lerp(st.rb.velocity, targetVel, a);
+            st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, a);
+        }
+
+        /// <summary>The host decided a hinge broke — mirror it by dropping our local joint.</summary>
+        private static void CheckHingeBroken(SimState st)
+        {
+            if (!st.isHinge || st.hinge == null) return;
+            if (!hingeBroken(st.hinge)) return;
+            if (st.joint != null)
+            {
+                UnityEngine.Object.Destroy(st.joint);
+                st.joint = null;
+            }
+            st.isHinge = false; // free object from now on: normal shadowing rules apply
+            if (Plugin.VerboseLogging.Value)
+            {
+                Plugin.Log.LogInfo($"[hinge] {st.pgo.name} broke on the host — local joint dropped");
+            }
         }
 
         /// <summary>

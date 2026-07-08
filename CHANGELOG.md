@@ -2,6 +2,20 @@
 
 > **HIGHLY EXPERIMENTAL — testing phase. Prone to game-breaking bugs. Not for normal play.**
 
+# 1.0.3
+
+- Fixed choppy shadowed objects: Photon only sends packets when something changes, and the
+  blend treated stale data as live — objects vibrated/drifted around old targets. Silence now
+  correctly means "the host's copy is at rest exactly there", and while packets flow the blend
+  leads the target by the data's age for continuous motion. Blends also use interpolation-aware
+  physics moves instead of raw position writes (no more visible stepping)
+- Fixed cart desync when dragging from the body ("weak" mode): the local steering drive now
+  engages only for handle grabs, matching what the host actually simulates
+- Doors and cabinets are simulated locally again — done right this time (the way the original
+  NetworkingReworked did it): the game's own hinge logic (closing torque, latching, bounce,
+  stabilization) runs on your machine, the local joint is kept and unbreakable, host decides
+  breaks and we mirror them. Doors respond instantly (config: SimulateHinges)
+
 # 1.0.2
 
 - CRITICAL: fixed the "no internet" bug (couldn't host or join, no error shown) that came back

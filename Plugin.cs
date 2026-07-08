@@ -13,12 +13,13 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.0.2";
+        public const string PluginVersion = "1.0.3";
 
         internal static ManualLogSource Log;
 
         // simulation
         internal static ConfigEntry<bool> SimulateCarts;
+        internal static ConfigEntry<bool> SimulateHinges;
         internal static ConfigEntry<bool> InstantCartHandle;
         internal static ConfigEntry<float> PassiveSyncStrength;
         internal static ConfigEntry<float> PostThrowGrace;
@@ -69,6 +70,9 @@ namespace RevivalSync
 
             SimulateCarts = Config.Bind("Simulation", "SimulateCarts", true,
                 "Simulate carts locally (removes cart input lag).");
+            SimulateHinges = Config.Bind("Simulation", "SimulateHinges", true,
+                "Simulate doors/cabinets locally: the game's own hinge logic (closing, latching, bounce) " +
+                "runs on your machine so they respond instantly. Turn off to make them host-driven.");
             InstantCartHandle = Config.Bind("Simulation", "InstantCartHandle", true,
                 "Register cart handle grabs locally right away instead of waiting for the host.");
             PassiveSyncStrength = Config.Bind("Simulation", "PassiveSyncStrength", 0.075f,
@@ -130,6 +134,7 @@ namespace RevivalSync
             {
                 typeof(Patches.DriverHooksPatch),
                 typeof(Patches.PhotonHandlerAwakePatch),
+                typeof(Patches.HingeJointKeeperPatch),
                 typeof(Patches.PhysGrabObjectStartPatch),
                 typeof(Patches.GrabStartedPatch),
                 typeof(Patches.GrabEndedPatch),

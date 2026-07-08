@@ -215,6 +215,12 @@ namespace RevivalSync.Patches
             Add(typeof(PhysGrabObject), "FixedUpdate");
             Add(typeof(PhysGrabCart), "FixedUpdate");
             Add(typeof(PhysGrabCart), "CartSteer");
+            if (Plugin.SimulateHinges.Value)
+            {
+                // runs the game's own door logic (closing torque, latching, bounce,
+                // hinge-point stabilization) locally for simulated doors
+                Add(typeof(PhysGrabHinge), "FixedUpdate");
+            }
             if (Plugin.InstantCartHandle.Value)
             {
                 Add(typeof(PhysGrabObjectGrabArea), "Update");
@@ -266,6 +272,39 @@ namespace RevivalSync.Patches
             if (pgo == null) pgo = self.GetComponent<PhysGrabObject>();
             if (pgo == null) pgo = self.GetComponentInParent<PhysGrabObject>();
             return pgo != null && SimManager.HasPhysicsAuthority(pgo);
+        }
+    }
+
+    /// <summary>
+    /// Vanilla clients DESTROY the hinge joint on doors/cabinets (the host simulates them
+    /// remotely). Keep the joint so the locally-running hinge logic has something to swing.
+    /// </summary>
+    [HarmonyPatch(typeof(PhysGrabHinge), "Awake")]
+    internal static class HingeJointKeeperPatch
+    {
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            MethodInfo notMaster = AccessTools.Method(typeof(SemiFunc), "IsNotMasterClient");
+            MethodInfo replacement = AccessTools.Method(typeof(HingeJointKeeperPatch), nameof(NotMasterAndHingeSimOff));
+            int replaced = 0;
+            foreach (CodeInstruction ins in instructions)
+            {
+                if (notMaster != null && ins.Calls(notMaster))
+                {
+                    ins.operand = replacement;
+                    replaced++;
+                }
+                yield return ins;
+            }
+            if (replaced == 0)
+            {
+                Plugin.Log.LogWarning("HingeJointKeeperPatch: PhysGrabHinge.Awake changed — doors stay host-driven.");
+            }
+        }
+
+        public static bool NotMasterAndHingeSimOff()
+        {
+            return SemiFunc.IsNotMasterClient() && !Plugin.SimulateHinges.Value;
         }
     }
 
