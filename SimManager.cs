@@ -39,6 +39,7 @@ namespace RevivalSync
             public float localPushTimer;    // hinges: local player/held object is pushing — go fully local
             public float postThrowTimer;    // > 0 shortly after release: blend extra softly
             public float postThrowRamp;     // after the grace: fade corrections back in (no brake)
+            public float noSnapTimer;       // recently thrown: landings glide to the host spot, never teleport
             public float desyncTimer;       // how long we've been far from the host's copy while holding
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
@@ -390,6 +391,10 @@ namespace RevivalSync
             // would reconcile toward our own lie instead of the host's closed state)
             st.postThrowTimer = st.isHinge ? 0f
                 : (st.cart != null ? Plugin.PostThrowGrace.Value * 2.5f : Plugin.PostThrowGrace.Value);
+            if (!st.isHinge)
+            {
+                st.noSnapTimer = 3f; // bounces diverge between machines: glide, don't teleport
+            }
             pgoIsMaster(pgo) = false;
 
             // NetworkingReworked's release trick (its SyncAfterRelease/OverwriteStoredNetworkData):
@@ -837,6 +842,10 @@ namespace RevivalSync
             {
                 st.postThrowRamp -= Time.fixedDeltaTime;
             }
+            if (st.noSnapTimer > 0f)
+            {
+                st.noSnapTimer -= Time.fixedDeltaTime;
+            }
 
             if (st.hostTeleport)
             {
@@ -936,7 +945,8 @@ namespace RevivalSync
             }
 
             // wedged on geometry: blending grinds against the wall forever, snap it free
-            if (dist > 1.5f && st.rb.velocity.sqrMagnitude < 1f && st.postThrowTimer <= 0f)
+            if (dist > 1.5f && st.rb.velocity.sqrMagnitude < 1f && st.postThrowTimer <= 0f
+                && st.noSnapTimer <= 0f)
             {
                 st.stuckTimer += Time.fixedDeltaTime;
                 if (st.stuckTimer > 1.2f)
@@ -971,7 +981,10 @@ namespace RevivalSync
                 // FOLLOWS the host's velocity, then converges — no mid-air brake.
                 float corrScale = 1f - Mathf.Clamp01(st.postThrowRamp / 0.4f);
                 float gain = a * 25f * (1f + errMag * 2f) * corrScale;
-                Vector3 desiredVel = targetVel + Vector3.ClampMagnitude(posErr * gain, 10f);
+                // a resting host copy means we're just settling a landing mismatch —
+                // glide over calmly instead of zipping (which reads as a snap)
+                float corrCap = hostIdle ? 2.5f : 10f;
+                Vector3 desiredVel = targetVel + Vector3.ClampMagnitude(posErr * gain, corrCap);
                 st.rb.velocity = Vector3.Lerp(st.rb.velocity, desiredVel, velBlend);
             }
             else

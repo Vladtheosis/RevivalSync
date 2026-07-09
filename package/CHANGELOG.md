@@ -2,6 +2,13 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.2
+
+- Thrown objects no longer snap to the host's landing spot after they fall: for 3 seconds
+  after a throw the "wedged object" teleport is disabled (bounces legitimately land in
+  different spots on each machine), and settling toward a resting host copy is capped to
+  a calm glide speed instead of a zip
+
 # 1.2.1
 
 - Thrown objects no longer stop mid-air "catching their breath": the sync target is now
