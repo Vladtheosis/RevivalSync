@@ -13,7 +13,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.1.9";
+        public const string PluginVersion = "1.2.0";
 
         internal static ManualLogSource Log;
 
@@ -77,10 +77,11 @@ namespace RevivalSync
                 "Doors and cabinets swing the moment you touch them, no waiting on the host. " +
                 "Only turn this off if doors misbehave for you.");
             SimulateItems = Config.Bind("1. Main", "Instant Items", true,
-                "Simple items (health packs and other plain carryables) follow your hand " +
-                "instantly and fly the way you throw them. Weapons, grenades and powered " +
-                "gadgets always use the game's normal sync — proven more reliable for them. " +
-                "Only turn this off if an item misbehaves for you.");
+                "Weapons, grenades and gadgets follow your hand instantly, aim with your " +
+                "camera and fly the way you throw them. Damage and explosions are still " +
+                "decided by the host, like normal. Vehicles, drones and the duck always " +
+                "use the game's normal sync (they move themselves). Only turn this off " +
+                "if an item misbehaves for you.");
             DisableTimeout = Config.Bind("1. Main", "No Timeout Kicks", true,
                 "Stops the game from kicking you out of the lobby during short lag spikes.");
             SmoothSync = Config.Bind("1. Main", "Smooth Enemies", true,

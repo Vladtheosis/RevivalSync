@@ -212,3 +212,17 @@ existed because we owned objects whose per-type scripts fight generic ownership 
 knew this in 0.2.x. The gun/melee local-orientation code paths remain in
 ApplyHeldOrientation but are unreachable (blocked types never register); kept as
 reference with this note.
+
+## 1.2.0 - item policy final form: "the client controls what it touches"
+
+1.1.9 (full NR blocklist) was stable but made every actively-used tool feel host-laggy -
+the user immediately wanted singleplayer feel back. Settled policy:
+- SIMULATED with local orientation: guns (aimVerticalOffset), melee (forwardTilt/
+  orientationOffset/currentYRotation) - the 1.1.8 architecture, which was the correct
+  design all along (no network in the rotation loop); it just never got a clean test
+  before the blocklist pivot.
+- SIMULATED with gentle host mirror: other gadgets (staffs, trackers, health packs...).
+- VANILLA (blocked): only AUTONOMOUS objects - things that move THEMSELVES rather than
+  being moved: ItemVehicle, ItemDrone*, ItemRubberDuck*. This is the principled line:
+  ownership belongs to whoever provides the motion. Player provides motion -> client
+  owns. Object provides motion -> host owns.

@@ -2,6 +2,17 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.0
+
+- The client controls what it touches: weapons, grenades and gadgets are back under
+  local simulation for the true singleplayer feel — 1.1.9's blocklist made every tool
+  you actively use feel host-laggy in hand. Weapon orientation is computed locally from
+  each weapon's own aim/tilt tuning (no network data in the rotation loop, so none of
+  the old glitching), gadgets mirror the host gently, and damage/explosions remain
+  host-decided like vanilla
+- Only genuinely self-moving objects stay on the game's normal sync: vehicles, drones,
+  and the duck
+
 # 1.1.9
 
 - Adopted the original NetworkingReworked's item policy wholesale (credit: readthisifbad):
