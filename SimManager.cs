@@ -40,6 +40,7 @@ namespace RevivalSync
             public float postThrowTimer;    // > 0 shortly after release: blend extra softly
             public float postThrowRamp;     // after the grace: fade corrections back in (no brake)
             public float noSnapTimer;       // recently thrown: landings glide to the host spot, never teleport
+            public float hingeSyncPause;    // door we just pushed/released: settle window before host truth resumes
             public float desyncTimer;       // how long we've been far from the host's copy while holding
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
@@ -394,6 +395,10 @@ namespace RevivalSync
             if (!st.isHinge)
             {
                 st.noSnapTimer = 3f; // bounces diverge between machines: glide, don't teleport
+            }
+            else
+            {
+                st.hingeSyncPause = 1.5f; // let the door you just swung finish before host truth resumes
             }
             pgoIsMaster(pgo) = false;
 
@@ -896,27 +901,26 @@ namespace RevivalSync
                 if (st.localPushTimer > 0f)
                 {
                     st.localPushTimer -= Time.fixedDeltaTime;
+                    st.hingeSyncPause = 1f; // and let it settle after the push ends
                     return;
                 }
-                // NetworkingReworked's door model: hinges run the game's own logic fully
-                // locally, and continuous rotation sync only FIGHTS it ("opening stuff is
-                // delayed"). A door in local motion belongs to local physics; we only
-                // follow the host when ITS copy is moving while ours rests (another player
-                // using the door), and gently reconcile long-idle disagreement.
-                if (st.rb.angularVelocity.sqrMagnitude > 0.25f) return;
-                float hingeAngle = Quaternion.Angle(st.rb.rotation, st.hostRot);
-                if (!hostIdle)
+                if (st.hingeSyncPause > 0f)
                 {
-                    if (hingeAngle > 0.5f)
-                    {
-                        float ha = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
-                        st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, ha));
-                        st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, ha);
-                    }
+                    st.hingeSyncPause -= Time.fixedDeltaTime;
+                    // still swinging from OUR interaction: local physics finishes the swing
+                    if (st.rb.angularVelocity.sqrMagnitude > 0.25f) return;
                 }
-                else if (hingeAngle > 10f)
+                // otherwise the host's door angle is continuously authoritative. The
+                // game's own auto-close logic runs locally too — an unsynced "local
+                // motion owns the door" rule let that spring quietly fight host truth
+                // (open cupboards self-closing = desync). Only OUR interactions above
+                // may interrupt the sync, never the door's own spring.
+                float hingeAngle = Quaternion.Angle(st.rb.rotation, st.hostRot);
+                if (hingeAngle > 0.5f)
                 {
-                    st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, 0.05f));
+                    float ha = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
+                    st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, ha));
+                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, ha);
                 }
                 return;
             }

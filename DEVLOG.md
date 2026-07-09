@@ -238,3 +238,13 @@ the user immediately wanted singleplayer feel back. Settled policy:
 - Hinges are exempt from the entire throw pipeline (no LocalThrow, no postThrow grace,
   no host-cache seeding on release): seeding masked the host TRUE door rotation - shop
   doors reconciled toward the player lie instead of the host locked/closed state.
+
+## 1.2.3 - the door-sync rule, final form
+
+"Local motion owns the door" (1.1.2) was too broad: the game AUTO-CLOSE spring runs
+locally (authority transpiler) and its motion also gated out syncing - open cupboards
+quietly self-closed on clients (desync). Final rule: HOST ANGLE IS CONTINUOUSLY
+AUTHORITATIVE for hinges; only OUR interactions interrupt it - localPushTimer (contact
+pushes), hingeSyncPause 1.5s on grab release / 1s trailing a push, and during the pause
+only while still actually swinging (angVel gate INSIDE the pause window only). The
+door spring may never out-vote the host.
