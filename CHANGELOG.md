@@ -2,6 +2,14 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.6
+
+- Tool straightening finally works at full strength: the game's grab system re-captures
+  its orientation target from the object's current rotation every frame, which silently
+  cancelled every previous attempt that steered the object directly. The mod now writes
+  the grab controller's own target (the same channel weapon scripts use) with the host's
+  straightened rotation — the game's own tuned torque does the driving
+
 # 1.1.5
 
 - Config rebuilt for humans: section "1. Main" has plain on/off switches (Instant Carts /

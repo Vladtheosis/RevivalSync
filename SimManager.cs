@@ -405,6 +405,34 @@ namespace RevivalSync
             }
         }
 
+        /// <summary>Points the grab controller's orientation target at the host's
+        /// (already straightened) rotation — the vectors are camera-relative, exactly
+        /// how PhysGrabObject.TurnXYZ writes them for item scripts.</summary>
+        private static void ApplyMirrorTarget(SimState st, PhysGrabber grabber)
+        {
+            if (grabber.playerAvatar == null || grabber.playerAvatar.localCamera == null) return;
+            Transform cam = grabber.playerAvatar.localCamera.GetOverrideTransform();
+            if (cam == null) return;
+            grabber.cameraRelativeGrabbedForward = cam.InverseTransformDirection(st.hostRot * Vector3.forward);
+            grabber.cameraRelativeGrabbedUp = cam.InverseTransformDirection(st.hostRot * Vector3.up);
+        }
+
+        /// <summary>Frame-rate refresh of held-tool orientation targets: the grabber's
+        /// beam update re-captures the target from the current rotation each frame, so a
+        /// physics-tick-only write loses whole frames to the re-capture. Item scripts
+        /// win this race by writing every Update — so do we.</summary>
+        internal static void MirrorHeldOrientationTargets()
+        {
+            if (states.Count == 0) return;
+            foreach (SimState st in states.Values)
+            {
+                if (!st.localGrab || !st.mirrorHeldRot || !st.hasHostState) continue;
+                PhysGrabber grabber = GetLocalGrabber(st);
+                if (grabber == null || grabber.isRotating) continue;
+                ApplyMirrorTarget(st, grabber);
+            }
+        }
+
         private static void EnsureDynamic(SimState st)
         {
             if (st.rb == null) return;
@@ -625,21 +653,16 @@ namespace RevivalSync
             // what shoved the tool off-straight — heavily damp rotation, then steer
             // angular velocity toward the host's rotation, unopposed. Manual rotation
             // (rotate key) gets priority, exactly like the game's gun code does it.
-            // NOTE: no heldHostIdle gate here — a stale rotation is still the right
-            // target (the host's straightened pose doesn't expire like positions do).
-            // Gating on packet freshness let the game's torque shove the tool crooked
-            // whenever the host's copy rested ("straightens but really weak").
+            // Retarget the game's own grab-orientation controller instead of steering the
+            // rigidbody: the grab code re-captures its target from the object's CURRENT
+            // rotation every frame (PhysGrabber beam update) and overwrites outside
+            // angular writes — which is why three rigidbody-steering attempts all felt
+            // "weak". Writing the camera-relative target vectors (the same channel item
+            // scripts use via TurnXYZ) makes the game's own tuned torque do the
+            // straightening at native strength. Also written per-frame from SimDriver.
             if (st.mirrorHeldRot && !grabber.isRotating)
             {
-                st.pgo.OverrideTorqueStrength(0.02f);
-                st.pgo.OverrideAngularDrag(15f);
-                (st.hostRot * Quaternion.Inverse(st.rb.rotation)).ToAngleAxis(out float mAngle, out Vector3 mAxis);
-                if (mAngle > 180f) mAngle -= 360f;
-                if (Mathf.Abs(mAngle) > 1f && !float.IsInfinity(mAxis.x))
-                {
-                    Vector3 mirrorAngVel = Vector3.ClampMagnitude(Mathf.Deg2Rad * mAngle * mAxis.normalized * 10f, 12f);
-                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, mirrorAngVel, 0.5f);
-                }
+                ApplyMirrorTarget(st, grabber);
             }
 
             DebugHeld(st, grabber, drift, speed);
@@ -1204,6 +1227,7 @@ namespace RevivalSync
             }
 
             Plugin.ApplyPhotonSettings();
+            SimManager.MirrorHeldOrientationTargets();
             Smoothing.Sweep();
         }
     }
