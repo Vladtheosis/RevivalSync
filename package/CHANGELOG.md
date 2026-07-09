@@ -2,13 +2,15 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
-# 1.2.3
+# 1.2.3 — first stable release
 
 - Fixed doors and cupboards drifting out of sync with the host: the door's own auto-close
   spring (which runs locally) counted as "local motion" and blocked syncing — an open
   cupboard would quietly close itself on your screen while staying open for the host.
   The host's door angle is now continuously authoritative; only YOUR pushes, grabs and
   the settle right after them go local (so opening things stays instant)
+- Known issue: doors/cupboards can still occasionally appear desynced from the host —
+  this is ongoing work. Reports with Verbose Logging on are very welcome
 
 # 1.2.2
 

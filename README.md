@@ -34,6 +34,13 @@ and the release-state overwrite that makes throws fly clean. Thank you.
 Item *effects* — damage, explosions, battery drain, breaking — stay host-decided exactly
 like vanilla; only the physics feel is local.
 
+## Known issues
+
+- **Doors and cupboards can occasionally appear desynced** from what the host sees
+  (e.g. open on one screen, closed on the other). This is actively being worked on —
+  if it happens to you, a report with `Verbose Logging` on and your `LogOutput.log`
+  attached helps a lot.
+
 Both players can (and should) install it — it automatically does nothing while you're the
 host and activates when you're the client.
 
