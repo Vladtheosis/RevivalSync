@@ -164,3 +164,20 @@ StateSetRPC (host -> RpcTarget.All, MasterOnlyRPC-guarded); StateSwinging calls
 ActivateHitbox() from the UNGATED Update() half, i.e. hitboxes already activate on every
 client natively. If melee hits ever feel wrong for clients, the suspect is hitbox POSITION
 (host sees the weapon trailing our hand by ~ping), not activation.
+
+## 1.1.6 - held-object orientation: retarget the controller, never steer the body
+
+Four versions of tool-straightening attempts, one root cause found in the decomp
+(PhysGrabber beam update, ~line 1981): while an object is held, the grabber RE-CAPTURES
+cameraRelativeGrabbedForward/Up from the object CURRENT rotation every frame (when
+physRotatingTimer <= 0). Consequences:
+1. By default nothing straightens a held object - the orientation target follows the
+   object, so the grab torque is orientation-neutral. Item scripts create real targets
+   by overwriting these vectors every Update via TurnXYZ.
+2. Any outside write to rb.rotation/angularVelocity gets neutralized or stomped by the
+   grab manipulation running in the same tick - MoveRotation slerp (buzz), angVel
+   steering (weak), angVel + torque overrides (still weak) all failed identically.
+THE way to control held orientation: write grabber.cameraRelativeGrabbedForward/Up
+(camera-relative: cam.InverseTransformDirection(targetRot * Vector3.forward/up), cam =
+playerAvatar.localCamera.GetOverrideTransform()) every FRAME (frame-rate beats the
+frame-rate recapture; tick-rate alone loses whole frames). Respect grabber.isRotating.
