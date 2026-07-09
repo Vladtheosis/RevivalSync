@@ -188,3 +188,15 @@ The complete held-orientation recipe is THREE parts (all from the game's own wea
 2. strength: pgo.OverrideTorqueStrength(2f) sustained - base torque is scaled 15*dt (gentle)
 3. damping: pgo.OverrideAngularDrag(20f) sustained - kills the flop
 Target without strength+damping = floppy (1.1.6). Steering the rigidbody at all = stomped (1.1.2-1.1.4).
+
+### 1.1.8 final orientation architecture + vehicles
+- Weapons (ItemGun/ItemMelee): hold orientation computed LOCALLY per frame+tick from
+  their own public tuning fields (gun: aimVerticalOffset; melee: forwardTilt/
+  orientationOffset/turnWeapon/currentYRotation via FieldRef) -> pgo.TurnXYZ + the item
+  type-appropriate strength (gun 2/drag 20, melee 0.4/drag 5). Zero network in the
+  rotation loop. Mirroring the HOST rotation at full strength telegraphs the 10Hz,
+  ping-late packet steps = "glitchy" (1.1.7 lesson). Gentle mirror stays for gadget
+  types we do not know fields for.
+- Drivable vehicles (ItemVehicle, e.g. Semiscooter) are EXCLUDED from simulation
+  entirely - they have their own drive physics/networking; syncing them while the local
+  player drives makes them undrivable. Old-mod philosophy: block what has complex logic.

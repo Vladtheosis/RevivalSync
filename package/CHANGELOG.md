@@ -2,6 +2,17 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.8
+
+- Fixed undrivable vehicles: the new drivable vehicles (Semiscooter etc.) were being
+  synced toward the host's lagging copy while you drove them. Vehicles are now fully
+  excluded from the simulation — they use their own driving physics and networking
+- Fixed glitchy weapon hold: holding the host's rotation at full strength telegraphed
+  every 10-per-second, ping-late network step. Guns and melee weapons now compute their
+  hold orientation locally from their own tuning fields (aim offset, tilt) — the same
+  numbers their scripts use — so there is no network data in the rotation loop at all.
+  Other gadgets keep a gentle host mirror that can't telegraph steps
+
 # 1.1.7
 
 - Tool hold is now firm, not floppy: pointing the grab controller at the right rotation

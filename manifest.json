@@ -1,6 +1,6 @@
 {
     "name": "RevivalSync",
-    "version_number": "1.1.7",
+    "version_number": "1.1.8",
     "website_url": "https://github.com/Vladtheosis/RevivalSync",
     "description": "Singleplayer-feel multiplayer for R.E.P.O. - instant carts, doors, items and loot, no timeout kicks. Client-side, works with unmodded hosts. Made by Revival.",
     "dependencies": [

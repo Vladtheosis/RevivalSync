@@ -43,6 +43,8 @@ namespace RevivalSync
             public float debugTimer;        // rate limit for verbose diagnostics
             public int ridingTick;          // == current tick when sitting inside a locally-held cart
             public bool mirrorHeldRot;      // item without local orientation logic: copy host rotation while held
+            public ItemGun gun;             // weapons compute their hold orientation locally
+            public ItemMelee melee;         // (from their own tuning fields — no network in the loop)
 
             public bool hasHostState;
             public float lastPacketTime = -999f;
@@ -75,6 +77,7 @@ namespace RevivalSync
 
         // ---- reflection accessors into game internals ----
         private static AccessTools.FieldRef<PhysGrabObject, bool> pgoIsMaster;
+        private static AccessTools.FieldRef<ItemMelee, Quaternion> meleeYRot;
         private static AccessTools.FieldRef<PhysGrabObject, bool> pgoIsActive;
         private static AccessTools.FieldRef<PhysGrabber, PhysGrabObject> grabberObject;
         private static AccessTools.FieldRef<PhysGrabCart, List<PhysGrabObject>> cartItems;
@@ -115,6 +118,7 @@ namespace RevivalSync
                 cartGrabArea = AccessTools.FieldRefAccess<PhysGrabCart, PhysGrabObjectGrabArea>("physGrabObjectGrabArea");
                 avatarSprinting = AccessTools.FieldRefAccess<PlayerAvatar, bool>("isSprinting");
                 hingeBroken = AccessTools.FieldRefAccess<PhysGrabHinge, bool>("broken");
+                meleeYRot = AccessTools.FieldRefAccess<ItemMelee, Quaternion>("currentYRotation");
                 pgoThrow = AccessTools.Method(typeof(PhysGrabObject), "Throw");
 
                 ptvNetPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("m_NetworkPosition");
@@ -209,6 +213,11 @@ namespace RevivalSync
             if (o.GetComponentInParent<Enemy>() != null) return false;
             if (o.GetComponentInParent<EnemyRigidbody>() != null) return false;
             if (o.GetComponentInParent<PhysGrabHinge>() != null) return Plugin.SimulateHinges.Value;
+            // drivable vehicles have their own driving physics and networking — blending
+            // them toward the host's lagging copy while the local player drives makes
+            // them impossible to steer. Fully vanilla, like the old NetworkingReworked
+            // blocked everything with complex logic of its own.
+            if (o.GetComponentInParent<ItemVehicle>() != null) return false;
             // shop items follow the same passive-shadowing rules as valuables; their own
             // logic (damage, explosions, batteries) stays host-gated and untouched
             if (o.GetComponentInParent<ItemAttributes>() != null) return Plugin.SimulateItems.Value;
@@ -298,11 +307,13 @@ namespace RevivalSync
             }
             if (!st.isHinge && st.cart == null && pgo.GetComponentInParent<ItemAttributes>() != null)
             {
-                // items orient themselves in hand through master-gated scripts the host
-                // runs on our behalf — mirror its straightened rotation while held.
-                // (Running the game's orientation code locally was tried in 1.1.0 and
-                // fights the client-side grab physics: weapons buzzed hard.)
-                st.mirrorHeldRot = true;
+                // weapons compute their hold orientation LOCALLY from their own tuning
+                // fields (aim offset, tilt) — mirroring the host's rotation at full
+                // strength telegraphs the 10Hz ping-late packet steps ("glitchy").
+                // Gadgets without known orientation fields mirror the host gently.
+                st.gun = pgo.GetComponentInChildren<ItemGun>(true);
+                st.melee = pgo.GetComponentInChildren<ItemMelee>(true);
+                st.mirrorHeldRot = st.gun == null && st.melee == null;
             }
 
             // seed from whatever the transform view last received, so we have a sane
@@ -408,19 +419,40 @@ namespace RevivalSync
         /// <summary>Points the grab controller's orientation target at the host's
         /// (already straightened) rotation — the vectors are camera-relative, exactly
         /// how PhysGrabObject.TurnXYZ writes them for item scripts.</summary>
-        private static void ApplyMirrorTarget(SimState st, PhysGrabber grabber)
+        private static void ApplyHeldOrientation(SimState st, PhysGrabber grabber)
         {
+            if (st.gun != null)
+            {
+                // ItemGun.UpdateMaster's orientation core, computed locally: camera-
+                // forward aim with the gun's own vertical offset, held at the gun's own
+                // torque/damping values. No network data in the loop = no glitch.
+                st.pgo.TurnXYZ(Quaternion.Euler(st.gun.aimVerticalOffset, 0f, 0f),
+                    Quaternion.identity, Quaternion.identity);
+                st.pgo.OverrideTorqueStrength(2f);
+                st.pgo.OverrideAngularDrag(20f);
+                return;
+            }
+            if (st.melee != null)
+            {
+                // ItemMelee.TurnXYZLogic computed locally, with melee's softer hold
+                if (!st.melee.usesForceRotation) return;
+                Quaternion turnX = st.melee.turnWeapon
+                    ? Quaternion.Euler(st.melee.forwardTilt, 0f, 0f)
+                    : Quaternion.Euler(st.melee.forwardTilt + st.melee.orientationOffset.x,
+                        st.melee.orientationOffset.y, st.melee.orientationOffset.z);
+                st.pgo.TurnXYZ(turnX, meleeYRot(st.melee), Quaternion.identity);
+                st.pgo.OverrideTorqueStrength(st.melee.customTorqueStrength ? st.melee.torqueStrength : 0.4f);
+                st.pgo.OverrideAngularDrag(5f);
+                return;
+            }
+            if (!st.mirrorHeldRot || !st.hasHostState) return;
+            // gadgets without known orientation fields: gentle host mirror — soft enough
+            // that the 10Hz ping-late target can't telegraph as glitching
             if (grabber.playerAvatar == null || grabber.playerAvatar.localCamera == null) return;
             Transform cam = grabber.playerAvatar.localCamera.GetOverrideTransform();
             if (cam == null) return;
             grabber.cameraRelativeGrabbedForward = cam.InverseTransformDirection(st.hostRot * Vector3.forward);
             grabber.cameraRelativeGrabbedUp = cam.InverseTransformDirection(st.hostRot * Vector3.up);
-            // the target alone isn't enough: the base orientation torque is scaled by
-            // 15*dt (gentle by design), so a correct target still holds floppily. Host
-            // weapons feel firm because their scripts stack OverrideTorqueStrength(2) +
-            // OverrideAngularDrag(20) on top — ItemGun's exact hold recipe, applied here
-            st.pgo.OverrideTorqueStrength(2f);
-            st.pgo.OverrideAngularDrag(20f);
         }
 
         /// <summary>Frame-rate refresh of held-tool orientation targets: the grabber's
@@ -432,10 +464,11 @@ namespace RevivalSync
             if (states.Count == 0) return;
             foreach (SimState st in states.Values)
             {
-                if (!st.localGrab || !st.mirrorHeldRot || !st.hasHostState) continue;
+                if (!st.localGrab) continue;
+                if (st.gun == null && st.melee == null && !st.mirrorHeldRot) continue;
                 PhysGrabber grabber = GetLocalGrabber(st);
                 if (grabber == null || grabber.isRotating) continue;
-                ApplyMirrorTarget(st, grabber);
+                ApplyHeldOrientation(st, grabber);
             }
         }
 
@@ -666,9 +699,9 @@ namespace RevivalSync
             // "weak". Writing the camera-relative target vectors (the same channel item
             // scripts use via TurnXYZ) makes the game's own tuned torque do the
             // straightening at native strength. Also written per-frame from SimDriver.
-            if (st.mirrorHeldRot && !grabber.isRotating)
+            if (!grabber.isRotating)
             {
-                ApplyMirrorTarget(st, grabber);
+                ApplyHeldOrientation(st, grabber);
             }
 
             DebugHeld(st, grabber, drift, speed);
