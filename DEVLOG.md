@@ -226,3 +226,15 @@ the user immediately wanted singleplayer feel back. Settled policy:
   being moved: ItemVehicle, ItemDrone*, ItemRubberDuck*. This is the principled line:
   ownership belongs to whoever provides the motion. Player provides motion -> client
   owns. Object provides motion -> host owns.
+
+## 1.2.1 - throw follow + doors exempt from throw handling
+
+- Mid-air "catching its breath" root cause: the host copy of a moving object trails by
+  one-way ping; our lead only compensated packetAge. Fix: lead = min(packetAge +
+  oneWayPing, 0.35), oneWayPing = PhotonNetwork.GetPing()*0.0005 refreshed per tick.
+  Plus postThrowRamp (0.4s): after the throw grace, correction gain fades in from 0 -
+  the object FOLLOWS host velocity first, converges second. Snap-distance check skipped
+  while ramping (a hard throw diverging early must glide, not teleport).
+- Hinges are exempt from the entire throw pipeline (no LocalThrow, no postThrow grace,
+  no host-cache seeding on release): seeding masked the host TRUE door rotation - shop
+  doors reconciled toward the player lie instead of the host locked/closed state.

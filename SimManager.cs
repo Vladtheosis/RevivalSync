@@ -38,6 +38,7 @@ namespace RevivalSync
             public bool localGrab;          // held by the local player right now
             public float localPushTimer;    // hinges: local player/held object is pushing — go fully local
             public float postThrowTimer;    // > 0 shortly after release: blend extra softly
+            public float postThrowRamp;     // after the grace: fade corrections back in (no brake)
             public float desyncTimer;       // how long we've been far from the host's copy while holding
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
@@ -384,9 +385,11 @@ namespace RevivalSync
             st.stuckTimer = 0f;
             // carts get extra settling time: a rapid release mid-drag otherwise blends the
             // cart back toward the host's still-trailing copy (visible rollback)
-            st.postThrowTimer = st.cart != null
-                ? Plugin.PostThrowGrace.Value * 2.5f
-                : Plugin.PostThrowGrace.Value;
+            // doors get NO throw treatment: throw grace and host-cache seeding both mask
+            // the host's true door rotation (a locked shop door "released" by a player
+            // would reconcile toward our own lie instead of the host's closed state)
+            st.postThrowTimer = st.isHinge ? 0f
+                : (st.cart != null ? Plugin.PostThrowGrace.Value * 2.5f : Plugin.PostThrowGrace.Value);
             pgoIsMaster(pgo) = false;
 
             // NetworkingReworked's release trick (its SyncAfterRelease/OverwriteStoredNetworkData):
@@ -394,7 +397,7 @@ namespace RevivalSync
             // "still in your hand" data is exactly the stale reference that made fresh
             // throws stop mid-air once corrections resumed — from here on we correct
             // against our own throw until real packets (which include it) arrive.
-            if (st.hasHostState && st.rb != null)
+            if (!st.isHinge && st.hasHostState && st.rb != null)
             {
                 st.hostPos = st.rb.position;
                 st.hostRot = st.rb.rotation;
@@ -416,6 +419,7 @@ namespace RevivalSync
         {
             if (pgoThrow == null || pgo == null || player == null) return;
             if (!states.TryGetValue(pgo, out SimState st) || st.rb == null || st.rb.isKinematic) return;
+            if (st.isHinge) return; // you don't throw a door
             try
             {
                 pgoThrow.Invoke(pgo, new object[] { player });
@@ -509,6 +513,7 @@ namespace RevivalSync
         // ---- per-physics-tick driver ----
 
         private static int tickCounter;
+        private static float oneWayPing;
         private static bool wasClientInLobby;
         private static float lastTickFixedTime = -1f;
         private static bool tickMarker;
@@ -541,6 +546,7 @@ namespace RevivalSync
 
             if (states.Count == 0) return;
             tickCounter++;
+            oneWayPing = PhotonNetwork.GetPing() * 0.0005f; // RTT ms → one-way seconds
 
             tickBuffer.Clear();
             tickBuffer.AddRange(states.Values);
@@ -822,6 +828,14 @@ namespace RevivalSync
             if (st.postThrowTimer > 0f)
             {
                 st.postThrowTimer -= Time.fixedDeltaTime;
+                if (st.postThrowTimer <= 0f)
+                {
+                    st.postThrowRamp = 0.4f; // hand control back gradually, not with a brake
+                }
+            }
+            else if (st.postThrowRamp > 0f)
+            {
+                st.postThrowRamp -= Time.fixedDeltaTime;
             }
 
             if (st.hostTeleport)
@@ -844,7 +858,12 @@ namespace RevivalSync
             bool hostIdle = packetAge > 0.35f;
             // while packets flow, lead the target by the data's age so movement is
             // continuous between packets instead of sawtoothing toward stale positions
-            Vector3 targetPos = hostIdle ? st.hostPos : st.hostPos + st.hostVel * Mathf.Min(packetAge, 0.25f);
+            // lead by data age PLUS one-way ping: the host's copy systematically trails
+            // a moving object by the ping, and following the un-led position is what
+            // braked fast throws mid-air ("catching its breath")
+            Vector3 targetPos = hostIdle
+                ? st.hostPos
+                : st.hostPos + st.hostVel * Mathf.Min(packetAge + oneWayPing, 0.35f);
             Vector3 targetVel = hostIdle ? Vector3.zero : st.hostVel;
             Vector3 targetAngVel = hostIdle ? Vector3.zero : st.hostAngVel;
 
@@ -910,7 +929,7 @@ namespace RevivalSync
             }
 
             float dist = Vector3.Distance(st.rb.position, targetPos);
-            if (dist > Plugin.SnapDistance.Value)
+            if (dist > Plugin.SnapDistance.Value && st.postThrowRamp <= 0f)
             {
                 Snap(st, "beyond snap distance");
                 return;
@@ -947,8 +966,11 @@ namespace RevivalSync
                 // error-scaled pull: gentle when nearly in place, firm when far — the
                 // object glides to the host's state quickly but is never position-forced
                 // (position forcing was the "jiggles its way over" look; slow flat gain
-                // was the "and it's kinda far off" trail)
-                float gain = a * 25f * (1f + errMag * 2f);
+                // was the "and it's kinda far off" trail).
+                // After a local throw the correction fades in from zero: the object first
+                // FOLLOWS the host's velocity, then converges — no mid-air brake.
+                float corrScale = 1f - Mathf.Clamp01(st.postThrowRamp / 0.4f);
+                float gain = a * 25f * (1f + errMag * 2f) * corrScale;
                 Vector3 desiredVel = targetVel + Vector3.ClampMagnitude(posErr * gain, 10f);
                 st.rb.velocity = Vector3.Lerp(st.rb.velocity, desiredVel, velBlend);
             }

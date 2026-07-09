@@ -2,6 +2,17 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.1
+
+- Thrown objects no longer stop mid-air "catching their breath": the sync target is now
+  led by your one-way ping (the host's copy always trails a moving object by exactly
+  that), and after the throw grace corrections fade in gradually — the object follows
+  the host's flight smoothly instead of braking toward its trailing position
+- Fixed weird shop doors: releasing a door was going through the throw pipeline
+  (throw grace + host-state overwrite), which masked the host's true door state — a
+  locked shop door would reconcile toward where YOU left it instead of where the host
+  keeps it. Doors are now fully exempt from throw handling
+
 # 1.2.0
 
 - The client controls what it touches: weapons, grenades and gadgets are back under
