@@ -2,6 +2,14 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.7
+
+- Tool hold is now firm, not floppy: pointing the grab controller at the right rotation
+  (1.1.6) wasn't enough — the game's base orientation torque is deliberately gentle.
+  Host-side weapons feel firm because their scripts stack a 2x torque boost and heavy
+  rotation damping on top; the mod now applies that exact recipe (the gun's own values)
+  while holding the host's rotation
+
 # 1.1.6
 
 - Tool straightening finally works at full strength: the game's grab system re-captures

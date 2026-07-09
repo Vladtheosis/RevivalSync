@@ -415,6 +415,12 @@ namespace RevivalSync
             if (cam == null) return;
             grabber.cameraRelativeGrabbedForward = cam.InverseTransformDirection(st.hostRot * Vector3.forward);
             grabber.cameraRelativeGrabbedUp = cam.InverseTransformDirection(st.hostRot * Vector3.up);
+            // the target alone isn't enough: the base orientation torque is scaled by
+            // 15*dt (gentle by design), so a correct target still holds floppily. Host
+            // weapons feel firm because their scripts stack OverrideTorqueStrength(2) +
+            // OverrideAngularDrag(20) on top — ItemGun's exact hold recipe, applied here
+            st.pgo.OverrideTorqueStrength(2f);
+            st.pgo.OverrideAngularDrag(20f);
         }
 
         /// <summary>Frame-rate refresh of held-tool orientation targets: the grabber's

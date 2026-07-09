@@ -181,3 +181,10 @@ THE way to control held orientation: write grabber.cameraRelativeGrabbedForward/
 (camera-relative: cam.InverseTransformDirection(targetRot * Vector3.forward/up), cam =
 playerAvatar.localCamera.GetOverrideTransform()) every FRAME (frame-rate beats the
 frame-rate recapture; tick-rate alone loses whole frames). Respect grabber.isRotating.
+
+### 1.1.7 addendum to the orientation lesson
+The complete held-orientation recipe is THREE parts (all from the game's own weapon code):
+1. target: grabber.cameraRelativeGrabbedForward/Up = cam.InverseTransformDirection(rot * fwd/up)
+2. strength: pgo.OverrideTorqueStrength(2f) sustained - base torque is scaled 15*dt (gentle)
+3. damping: pgo.OverrideAngularDrag(20f) sustained - kills the flop
+Target without strength+damping = floppy (1.1.6). Steering the rigidbody at all = stomped (1.1.2-1.1.4).
