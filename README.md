@@ -16,9 +16,10 @@ and the release-state overwrite that makes throws fly clean. Thank you.
 
 ## What it does (client-side only — works with unmodded hosts)
 
-- **Instant grabs**: valuables, props, shop items and carts respond the moment you grab
+- **Instant grabs**: valuables, props, simple items and carts respond the moment you grab
   them, no host round trip. Carts follow you at full speed with the game's real steering
-  feel; weapons straighten out in your hand; throws fly the way you threw them.
+  feel; throws fly the way you threw them. Weapons, powered gadgets and vehicles use the
+  game's normal sync — the reliable choice for objects with complex logic of their own.
 - **Instant doors**: doors and cabinets run the game's own hinge logic locally, so they
   swing the moment you touch them (the host still decides when they break).
 - **Synced world**: everything you're not holding glides smoothly toward the host's

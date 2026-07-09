@@ -2,6 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.1.9
+
+- Adopted the original NetworkingReworked's item policy wholesale (credit: readthisifbad):
+  weapons, powered gadgets (anything with a battery), grenades, mines, drones, upgrades
+  and vehicles are never simulated — they use the game's normal sync, which is simply the
+  reliable answer for objects with complex logic of their own. Correct orientation and
+  behavior, at the cost of a small hand lag on those items only
+- Simple items (health packs and plain carryables) keep the instant hand feel and
+  predicted throws
+
 # 1.1.8
 
 - Fixed undrivable vehicles: the new drivable vehicles (Semiscooter etc.) were being

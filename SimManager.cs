@@ -213,14 +213,32 @@ namespace RevivalSync
             if (o.GetComponentInParent<Enemy>() != null) return false;
             if (o.GetComponentInParent<EnemyRigidbody>() != null) return false;
             if (o.GetComponentInParent<PhysGrabHinge>() != null) return Plugin.SimulateHinges.Value;
-            // drivable vehicles have their own driving physics and networking — blending
-            // them toward the host's lagging copy while the local player drives makes
-            // them impossible to steer. Fully vanilla, like the old NetworkingReworked
-            // blocked everything with complex logic of its own.
+            // The original NetworkingReworked's item policy, adopted wholesale (credit:
+            // readthisifbad): never simulate items with heavy logic of their own —
+            // weapons, powered gadgets, grenades, drones, upgrades, vehicles. They stay
+            // fully vanilla (host-driven, correct orientation and behavior, slight hand
+            // lag). Simulating them caused the entire 1.1.x orientation saga; NR never
+            // had those problems because it refused to own these objects.
             if (o.GetComponentInParent<ItemVehicle>() != null) return false;
-            // shop items follow the same passive-shadowing rules as valuables; their own
-            // logic (damage, explosions, batteries) stays host-gated and untouched
-            if (o.GetComponentInParent<ItemAttributes>() != null) return Plugin.SimulateItems.Value;
+            if (o.GetComponentInParent<ItemBattery>() != null) return false; // guns, melee, staffs, toggles
+            if (o.GetComponentInParent<ItemGun>() != null) return false;
+            if (o.GetComponentInParent<ItemMelee>() != null) return false;
+            if (o.GetComponentInParent<ItemAttributes>() != null)
+            {
+                foreach (Component c in o.GetComponentsInParent<Component>(true))
+                {
+                    if (c == null) continue;
+                    string n = c.GetType().Name;
+                    if (n.StartsWith("ItemGrenade") || n.StartsWith("ItemDrone")
+                        || n.StartsWith("ItemUpgrade") || n.StartsWith("ItemMine")
+                        || n.StartsWith("ItemRubberDuck"))
+                    {
+                        return false;
+                    }
+                }
+                // what remains (health packs, simple carryables) shadows like valuables
+                return Plugin.SimulateItems.Value;
+            }
             return true;
         }
 

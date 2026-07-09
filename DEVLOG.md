@@ -200,3 +200,15 @@ Target without strength+damping = floppy (1.1.6). Steering the rigidbody at all 
 - Drivable vehicles (ItemVehicle, e.g. Semiscooter) are EXCLUDED from simulation
   entirely - they have their own drive physics/networking; syncing them while the local
   player drives makes them undrivable. Old-mod philosophy: block what has complex logic.
+
+## 1.1.9 - the item policy, settled (NR was right)
+
+Weapons and powered gadgets are NEVER simulated. Full NR blocklist adopted: ItemVehicle,
+ItemBattery (covers guns/melee/staffs/toggles), ItemGun, ItemMelee, plus name-prefix
+ItemGrenade*/ItemDrone*/ItemUpgrade*/ItemMine*/ItemRubberDuck*. They are vanilla:
+host-driven, correct orientation/behavior, small hand lag. Only simple carryables
+(health packs etc.) get instant-feel simulation. The whole 1.1.0-1.1.8 orientation saga
+existed because we owned objects whose per-type scripts fight generic ownership - NR
+knew this in 0.2.x. The gun/melee local-orientation code paths remain in
+ApplyHeldOrientation but are unreachable (blocked types never register); kept as
+reference with this note.
