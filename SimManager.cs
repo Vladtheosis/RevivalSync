@@ -322,6 +322,13 @@ namespace RevivalSync
                 // never sets on clients
                 pgo.spawned = true;
             }
+            // client-side simulation moves objects with real velocities — continuous
+            // collision detection keeps fast corrections and hard throws from tunneling
+            // through floors (the host never sees it because its copy runs vanilla)
+            if (st.rb.collisionDetectionMode == CollisionDetectionMode.Discrete)
+            {
+                st.rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            }
             if (!st.isHinge && st.cart == null && pgo.GetComponentInParent<ItemAttributes>() != null)
             {
                 // weapons compute their hold orientation LOCALLY from their own tuning
@@ -566,7 +573,15 @@ namespace RevivalSync
             // the cart backwards like an anchor and slams loot through the cart walls
             foreach (SimState st in tickBuffer)
             {
-                if (!st.localGrab || st.cart == null) continue;
+                if (st.cart == null || st.pgo == null || st.rb == null) continue;
+                // NetworkingReworked's cargo rule (broader than ours was): cargo rides in
+                // pure local physics whenever the cart is in use by ANYONE or still
+                // rolling — blending cargo toward 10Hz host positions inside a smoothly
+                // moving cart is the "loot vibrates in the cart" rattle
+                bool cartInUse = st.localGrab
+                    || st.pgo.playerGrabbing.Count > 0
+                    || st.rb.velocity.sqrMagnitude > 0.25f;
+                if (!cartInUse) continue;
                 List<PhysGrabObject> items = cartItems(st.cart);
                 if (items == null) continue;
                 for (int i = 0; i < items.Count; i++)
@@ -915,12 +930,16 @@ namespace RevivalSync
                 // motion owns the door" rule let that spring quietly fight host truth
                 // (open cupboards self-closing = desync). Only OUR interactions above
                 // may interrupt the sync, never the door's own spring.
-                float hingeAngle = Quaternion.Angle(st.rb.rotation, st.hostRot);
-                if (hingeAngle > 0.5f)
+                // joint-friendly host authority: steer ANGULAR VELOCITY to close the
+                // angle gap. MoveRotation forcing fought the hinge joint solver and the
+                // local closing spring 50x/s — that was the door jitter. The deadband
+                // keeps agreement calm; the joint itself keeps the swing on its arc.
+                (st.hostRot * Quaternion.Inverse(st.rb.rotation)).ToAngleAxis(out float hAng, out Vector3 hAxis);
+                if (hAng > 180f) hAng -= 360f;
+                if (Mathf.Abs(hAng) > 1.5f && !float.IsInfinity(hAxis.x))
                 {
-                    float ha = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
-                    st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, ha));
-                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, ha);
+                    Vector3 targetW = Vector3.ClampMagnitude(Mathf.Deg2Rad * hAng * hAxis.normalized * 4f, 6f);
+                    st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetW, 0.35f);
                 }
                 return;
             }

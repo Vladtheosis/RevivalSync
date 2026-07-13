@@ -2,6 +2,21 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.4
+
+- Loot in carts no longer rattles: cargo now rides in pure local physics whenever the
+  cart is in use by ANY player or still rolling (previously only your own cart counted) —
+  the original NetworkingReworked's cargo rule, adopted with thanks
+- Door jitter fixed for real this time: host authority over door angles is now applied
+  through angular velocity (joint-friendly) instead of rotation forcing, which fought
+  the hinge joint and the door's own spring 50 times a second
+- Objects should no longer fall through floors on clients: simulated objects get
+  continuous collision detection, so fast corrections and hard throws can't tunnel
+  through thin geometry
+- Known issue still under investigation: objects passing through other players and loot
+  misbehaving near them — client-side logs from an affected session will pin it down
+  (Verbose Logging on, send the LogOutput.log)
+
 # 1.2.3 — first stable release
 
 - Fixed doors and cupboards drifting out of sync with the host: the door's own auto-close
