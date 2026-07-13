@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -13,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.2.4";
+        public const string PluginVersion = "1.2.5";
 
         internal static ManualLogSource Log;
 
@@ -222,6 +223,43 @@ namespace RevivalSync
         private void OnDestroy()
         {
             SimManager.RestoreAll();
+            ArchiveSessionLog(true);
+        }
+
+        private static string sessionLogPath;
+        private static float nextLogArchive;
+
+        /// <summary>
+        /// BepInEx overwrites LogOutput.log on every launch, which has already destroyed
+        /// bug-session evidence once. Keep a copy of each session's log in
+        /// BepInEx/RevivalSync-logs (newest 10 sessions), refreshed every minute so even
+        /// a crash or hard kill preserves most of it.
+        /// </summary>
+        internal static void ArchiveSessionLog(bool force = false)
+        {
+            try
+            {
+                if (!force && Time.unscaledTime < nextLogArchive) return;
+                nextLogArchive = Time.unscaledTime + 60f;
+
+                string src = Path.Combine(Paths.BepInExRootPath, "LogOutput.log");
+                if (!File.Exists(src)) return;
+
+                if (sessionLogPath == null)
+                {
+                    string dir = Path.Combine(Paths.BepInExRootPath, "RevivalSync-logs");
+                    Directory.CreateDirectory(dir);
+                    sessionLogPath = Path.Combine(dir, $"session-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+                    FileInfo[] files = new DirectoryInfo(dir).GetFiles("session-*.log");
+                    Array.Sort(files, (a, b) => string.CompareOrdinal(b.Name, a.Name));
+                    for (int i = 9; i < files.Length; i++) files[i].Delete();
+                }
+                File.Copy(src, sessionLogPath, true);
+            }
+            catch
+            {
+                // archiving must never break the game or shutdown
+            }
         }
 
         /// <summary>

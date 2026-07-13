@@ -691,10 +691,15 @@ namespace RevivalSync
                 : Plugin.HeldDriftCorrectAt.Value) + lagAllowance;
 
             float drift = Vector3.Distance(st.rb.position, ledHostPos);
-            if (drift > Plugin.HeldDriftHandbackAt.Value + lagAllowance)
+            // carts get extra headroom: busy 4-player lobbies legitimately run multi-meter
+            // trails at sprint, and yanking a held cart back to the host reads as
+            // "it disappeared out of my hand"
+            float handbackAt = Plugin.HeldDriftHandbackAt.Value + lagAllowance;
+            if (st.cart != null) handbackAt *= 1.5f;
+            if (drift > handbackAt)
             {
                 st.desyncTimer += Time.fixedDeltaTime;
-                if (st.desyncTimer > 0.6f)
+                if (st.desyncTimer > (st.cart != null ? 1.2f : 0.6f))
                 {
                     ForceHandback(st);
                     return;
@@ -707,10 +712,14 @@ namespace RevivalSync
 
             // wedged on geometry while the host's copy (which follows our hand) is elsewhere:
             // lerping just grinds against the wall, so snap it free to where the host has it
-            if (drift > 1.5f && speed < 1f)
+            // NEVER wedge-snap a held cart (velocity-driven — it converges by itself, and
+            // teleporting it out of the player's hands is the worst possible outcome),
+            // and demand real conviction for everything else: busy lobbies legitimately
+            // pause with 2m+ trails, which is drift, not wedging
+            if (st.cart == null && drift > 2.5f && speed < 0.5f)
             {
                 st.stuckTimer += Time.fixedDeltaTime;
-                if (st.stuckTimer > 0.8f)
+                if (st.stuckTimer > 1.5f)
                 {
                     st.stuckTimer = 0f;
                     Snap(st, "held object wedged in geometry, freeing to host position");
@@ -1338,6 +1347,7 @@ namespace RevivalSync
             }
 
             Plugin.ApplyPhotonSettings();
+            Plugin.ArchiveSessionLog();
             SimManager.MirrorHeldOrientationTargets();
             Smoothing.Sweep();
         }

@@ -248,3 +248,17 @@ AUTHORITATIVE for hinges; only OUR interactions interrupt it - localPushTimer (c
 pushes), hingeSyncPause 1.5s on grab release / 1s trailing a push, and during the pause
 only while still actually swinging (angVel gate INSIDE the pause window only). The
 door spring may never out-vote the host.
+
+## 1.2.5 - held-object snap discipline + session log archive
+
+First real 4-player lobby ran ~10x the packet traffic of any test (2300+/10s); held-cart
+trails legitimately hit 3.8m at sprint. Consequences fixed:
+- Held wedge-snap ("freeing to host position") false-positived on a paused cart with a
+  normal trail -> cart teleported OUT OF THE PLAYER HAND. Rule: never wedge-snap a held
+  cart (velocity-driven, converges by itself; ForceHandback is the real safety); other
+  held items need drift>2.5m AND speed<0.5 for 1.5s.
+- Cart handback threshold x1.5 and 1.2s dwell (busy-lobby headroom).
+- ArchiveSessionLog: BepInEx truncates LogOutput.log every launch and wiped a bug
+  session once. Plugin copies the live log to BepInEx/RevivalSync-logs/session-*.log
+  every 60s + on OnDestroy, keeps newest 10. File.Copy works while BepInEx holds the
+  file (FileShare.Read).

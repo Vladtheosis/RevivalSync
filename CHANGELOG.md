@@ -2,6 +2,17 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.5
+
+- Held carts can no longer vanish from your hands: the anti-stuck teleport mistook a
+  busy lobby's normal multi-meter trail (cart paused, host copy catching up) for a
+  wedged object and "freed" it to the host position mid-grab. Carts are now fully
+  exempt from that teleport, other held items need much stronger evidence, and the
+  cart handback tolerance scales up for high-traffic lobbies
+- Session logs are now archived automatically to BepInEx/RevivalSync-logs (newest 10
+  sessions, refreshed every minute during play) — bug evidence survives restarts and
+  crashes for troubleshooting
+
 # 1.2.4
 
 - Loot in carts no longer rattles: cargo now rides in pure local physics whenever the
