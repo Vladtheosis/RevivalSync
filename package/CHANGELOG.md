@@ -2,7 +2,7 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
-# 1.2.5
+# 1.2.6
 
 - Held carts can no longer vanish from your hands: the anti-stuck teleport mistook a
   busy lobby's normal multi-meter trail (cart paused, host copy catching up) for a
@@ -12,6 +12,13 @@
 - Session logs are now archived automatically to BepInEx/RevivalSync-logs (newest 10
   sessions, refreshed every minute during play) — bug evidence survives restarts and
   crashes for troubleshooting
+- Reminder: if any feature misbehaves for you, every part of the mod can be switched
+  off individually in section "1. Main" of the config — in-game via the REPOConfig
+  mod's menu, or in BepInEx/config/com.Revival.revivalsync.cfg
+
+# 1.2.5
+
+- Interim release, number used outside this changelog
 
 # 1.2.4
 

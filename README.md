@@ -46,8 +46,10 @@ host and activates when you're the client.
 
 ## Config
 
-`BepInEx/config/com.Revival.revivalsync.cfg` (or the in-game mod settings menu if you use
-REPOConfig). Three sections:
+**If anything misbehaves for you, you can turn that part of the mod off** — every feature
+has its own switch in section "1. Main". Easiest with the in-game settings menu from the
+**REPOConfig** mod; otherwise edit `BepInEx/config/com.Revival.revivalsync.cfg`.
+Three sections:
 
 - **1. Main** — plain on/off switches (instant carts / doors / items, no timeout kicks,
   smooth enemies). Safe to flip; everything defaults to ON.
