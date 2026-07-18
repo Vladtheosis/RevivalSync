@@ -42,6 +42,7 @@ namespace RevivalSync
             public float noSnapTimer;       // recently thrown: landings glide to the host spot, never teleport
             public float hingeSyncPause;    // door we just pushed/released: settle window before host truth resumes
             public bool droneExempt;        // magnet drone drives this object: vanilla sync until released
+            public float farTimer;          // shadowed object stuck far from host: convergence backstop
             public float desyncTimer;       // how long we've been far from the host's copy while holding
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
@@ -372,7 +373,6 @@ namespace RevivalSync
 
             SimState st = TryRegister(pgo);
             if (st == null) return;
-            if (st.droneExempt) return; // the drone drives it — grab stays vanilla
 
             if (!st.localGrab && Plugin.VerboseLogging.Value)
             {
@@ -539,7 +539,8 @@ namespace RevivalSync
         private static AccessTools.FieldRef<ItemDrone, PhysGrabObject> droneMagnetTarget;
         private static bool droneAccessorsTried;
         internal static ItemDrone[] cachedDrones;
-        private static readonly HashSet<PhysGrabObject> droneTargets = new HashSet<PhysGrabObject>();
+        private static readonly Dictionary<PhysGrabObject, ItemDrone> droneTargetMap =
+            new Dictionary<PhysGrabObject, ItemDrone>();
 
         internal static void EnsureDroneAccessors()
         {
@@ -558,13 +559,13 @@ namespace RevivalSync
 
         private static void RebuildDroneTargets()
         {
-            droneTargets.Clear();
+            droneTargetMap.Clear();
             if (droneMagnetActive == null || cachedDrones == null) return;
             foreach (ItemDrone d in cachedDrones)
             {
                 if (d == null || !droneMagnetActive(d)) continue;
                 PhysGrabObject t = droneMagnetTarget(d);
-                if (t != null) droneTargets.Add(t);
+                if (t != null) droneTargetMap[t] = d;
             }
         }
         private static bool wasClientInLobby;
@@ -656,17 +657,21 @@ namespace RevivalSync
                 }
 
                 // "ownership follows whoever provides the motion": a magnet drone drives
-                // this object now, so the host owns it — vanilla sync until released.
-                // (Locally we'd simulate it at full weight while the host's copy floats
-                // feather-light: the "immovable object" bug.)
-                bool droneHeld = droneTargets.Count > 0 && droneTargets.Contains(st.pgo);
-                if (droneHeld != st.droneExempt)
+                // this object, so the host owns it — UNLESS the local player is also
+                // holding it (that is the feather drone's whole purpose: helping a player
+                // carry heavy loot). The player's grab always wins; 1.2.7 exempted held
+                // objects too and the fight caused an infinite exempt/re-register flap.
+                bool droneOnly = droneTargetMap.Count > 0 && !st.localGrab
+                    && droneTargetMap.ContainsKey(st.pgo);
+                if (droneOnly != st.droneExempt)
                 {
-                    st.droneExempt = droneHeld;
-                    if (droneHeld)
+                    st.droneExempt = droneOnly;
+                    if (droneOnly)
                     {
-                        if (st.localGrab) EndLocalGrab(st.pgo);
-                        Restore(st);
+                        pgoIsMaster(st.pgo) = false;
+                        // hand to vanilla WITHOUT unregistering (Restore() fully removes
+                        // the state — that removal was the 969-cycle flap in one session)
+                        SeedPtvFields(st);
                         if (Plugin.VerboseLogging.Value)
                         {
                             Plugin.Log.LogInfo($"[drone] {st.pgo.name}: magnet-grabbed — host drives it until released");
@@ -710,6 +715,17 @@ namespace RevivalSync
             if (st.cart != null)
             {
                 DriveHeldCart(st, grabber);
+            }
+
+            // a magnet drone is helping carry this held object: replicate the feather
+            // physics the host applies to its copy (ItemDroneFeather's target values) —
+            // otherwise we simulate it at full weight and it feels immovable
+            if (droneTargetMap.Count > 0 && droneTargetMap.TryGetValue(st.pgo, out ItemDrone helper)
+                && helper != null && helper.GetComponent<ItemDroneFeather>() != null)
+            {
+                st.pgo.OverrideMass(0.5f);
+                st.pgo.OverrideDrag(1f);
+                st.pgo.OverrideAngularDrag(5f);
             }
 
             // NOTE: hostKinematic is deliberately ignored while held — the game force-flags
@@ -1060,6 +1076,23 @@ namespace RevivalSync
             // interpolation smooth.
             Vector3 posErr = targetPos - st.rb.position;
             float errMag = posErr.magnitude;
+            // convergence backstop (user-requested): if the glide hasn't brought an
+            // object home after 5 seconds — wedged behind geometry, bad luck — teleport
+            // it. The promise is that loot ALWAYS ends up where the host sees it.
+            if (errMag > 1.5f)
+            {
+                st.farTimer += Time.fixedDeltaTime;
+                if (st.farTimer > 5f)
+                {
+                    st.farTimer = 0f;
+                    Snap(st, "stuck away from host position too long");
+                    return;
+                }
+            }
+            else if (errMag < 0.75f)
+            {
+                st.farTimer = 0f;
+            }
             if (errMag > 0.02f) // deadband: don't chase packet noise at equilibrium
             {
                 // error-scaled pull: gentle when nearly in place, firm when far — the
@@ -1215,6 +1248,14 @@ namespace RevivalSync
         /// <summary>Hand control back to PhotonTransformView without a visible snap.</summary>
         private static void Restore(SimState st)
         {
+            SeedPtvFields(st);
+            HardRemove(st);
+        }
+
+        /// <summary>Writes the vanilla transform view's internal state to match ours so a
+        /// handback never visibly snaps — does NOT unregister (Restore does that).</summary>
+        private static void SeedPtvFields(SimState st)
+        {
             try
             {
                 if (st.pgo != null)
@@ -1252,10 +1293,6 @@ namespace RevivalSync
             catch (Exception e)
             {
                 if (Plugin.VerboseLogging.Value) Plugin.Log.LogWarning($"Restore failed: {e.Message}");
-            }
-            finally
-            {
-                HardRemove(st);
             }
         }
 
@@ -1314,6 +1351,29 @@ namespace RevivalSync
             byPtv.Clear();
             byViewId.Clear();
             handedBack.Clear();
+        }
+
+        /// <summary>NetworkingReworked's HardSync applied to everything (credit:
+        /// readthisifbad): teleport every shadowed object to the host's exact state.
+        /// The player-facing emergency desync fix, bound to a key.</summary>
+        internal static void ResyncAll()
+        {
+            int n = 0;
+            foreach (SimState st in states.Values)
+            {
+                if (!st.hasHostState || st.localGrab || st.droneExempt) continue;
+                if (st.pgo == null || st.rb == null || !pgoIsActive(st.pgo)) continue;
+                st.rb.position = st.hostPos;
+                st.rb.rotation = st.hostRot;
+                if (!st.rb.isKinematic)
+                {
+                    st.rb.velocity = st.hostVel;
+                    st.rb.angularVelocity = st.hostAngVel;
+                }
+                st.farTimer = 0f;
+                n++;
+            }
+            Plugin.Log.LogInfo($"[resync] manual hard sync: {n} objects teleported to the host's state");
         }
 
         internal static int RegisteredCount => states.Count;
@@ -1403,6 +1463,12 @@ namespace RevivalSync
                                        $"packets={packets} (+{packets - lastPacketCount} in 10s)");
                     lastPacketCount = packets;
                 }
+            }
+
+            if (SimManager.Ready && SimManager.IsClientInLobby()
+                && UnityEngine.Input.GetKeyDown(Plugin.ResyncKey.Value))
+            {
+                SimManager.ResyncAll();
             }
 
             Plugin.ApplyPhotonSettings();

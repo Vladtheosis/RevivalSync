@@ -14,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.2.7";
+        public const string PluginVersion = "1.2.8";
 
         internal static ManualLogSource Log;
 
@@ -38,6 +38,7 @@ namespace RevivalSync
         internal static ConfigEntry<float> TimingThreshold;
         // debugging
         internal static ConfigEntry<bool> VerboseLogging;
+        internal static ConfigEntry<KeyCode> ResyncKey;
 
         /// <summary>
         /// False until the game initializes Photon itself. Touching PhotonNetwork before
@@ -87,6 +88,9 @@ namespace RevivalSync
                 "if an item misbehaves for you. Changes apply from the next level.");
             DisableTimeout = Config.Bind("1. Main", "No Timeout Kicks", true,
                 "Stops the game from kicking you out of the lobby during short lag spikes.");
+            ResyncKey = Config.Bind("1. Main", "Resync Loot Key", KeyCode.F8,
+                "Emergency desync fix: press this key to instantly teleport every synced " +
+                "object to exactly where the host sees it.");
             SmoothSync = Config.Bind("1. Main", "Smooth Enemies", true,
                 "Enemies and other host-controlled things move smoothly instead of stuttering. " +
                 "Takes effect on the next game launch.");

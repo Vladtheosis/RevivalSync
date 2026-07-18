@@ -8,7 +8,7 @@
     <LangVersion>9.0</LangVersion>
     <AssemblyName>RevivalSync</AssemblyName>
     <RootNamespace>RevivalSync</RootNamespace>
-    <Version>1.2.7</Version>
+    <Version>1.2.8</Version>
     <Authors>Revival</Authors>
     <Company>Revival</Company>
     <Copyright>Revival</Copyright>
@@ -60,6 +60,10 @@
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(GameManaged)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManaged)\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

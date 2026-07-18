@@ -276,3 +276,18 @@ trails legitimately hit 3.8m at sprint. Consequences fixed:
   clients via RPCs), that object reverts to vanilla sync (IsSuppressed/IsRegistered/
   HasPhysicsAuthority all false, StartLocalGrab refuses, Restore() seeds PTV on
   transition). Consistent with the ownership rule: the DRONE provides the motion.
+
+## 1.2.8 - drone flap root cause + resync key + convergence backstop
+
+- 1.2.7 drone exemption looped 969x on one piano: (a) Restore() ends in HardRemove -
+  it UNREGISTERS (know your own primitives!); exempt-enter removed the state, sweep
+  re-registered, fresh state exempted again. Split: SeedPtvFields (fields only) vs
+  Restore (seed + remove). (b) Deeper design bug: exempting a LOCALLY HELD object
+  fights the player grab (feather drone = help the player carry). Rule: player grab
+  wins; while held + feather-targeted, replicate the drone target physics locally
+  (OverrideMass 0.5 / Drag 1 / AngularDrag 5 per ItemDroneFeather); drone-only ->
+  vanilla handoff.
+- ResyncAll (NR HardSync for everything, credited) on configurable key (default F8).
+- Convergence backstop in TickShadow: >1.5m from target for >5s -> Snap. Promise:
+  loot always ends up where the host sees it.
+- UnityEngine.Input needs UnityEngine.InputLegacyModule reference (type-forwarded).

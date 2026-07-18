@@ -2,6 +2,21 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.8
+
+- Fixed the drone handoff for real: 1.2.7's version fought the player's own grab (the
+  feather drone exists to HELP you carry — you hold the piano while the drone lifts it)
+  and looped register/unregister hundreds of times, which was the "insane desync".
+  New rule: your grab always wins; while you carry a feather-lifted object the mod
+  applies the drone's lightweight physics locally so it feels light for you too; only
+  objects held by the drone ALONE go host-driven
+- New: Resync Loot Key (default F8, configurable) — press to instantly teleport every
+  synced object to exactly where the host sees it. The emergency desync fix, inspired
+  by the original NetworkingReworked's hard sync (credit: readthisifbad)
+- New: convergence backstop — any object that stays more than 1.5m from the host's
+  position for over 5 seconds teleports there, guaranteed. Loot always ends up where
+  the host sees it
+
 # 1.2.7
 
 - Fixed magnet drones (Feather etc.) making objects immovable: the drone applies its
