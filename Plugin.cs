@@ -73,20 +73,23 @@ namespace RevivalSync
             // ---- 1. Main: the on/off switches. Everything here is safe to flip. ----
             SimulateCarts = Config.Bind("1. Main", "Instant Carts", true,
                 "Carts respond the moment you grab and push them, no waiting on the host. " +
-                "Only turn this off if carts misbehave for you.");
+                "Only turn this off if carts misbehave for you. Changes apply from the " +
+                "next level.");
             SimulateHinges = Config.Bind("1. Main", "Instant Doors", true,
                 "Doors and cabinets swing the moment you touch them, no waiting on the host. " +
-                "Only turn this off if doors misbehave for you.");
+                "Only turn this off if doors misbehave for you. Takes full effect on the " +
+                "next game launch.");
             SimulateItems = Config.Bind("1. Main", "Instant Items", true,
                 "Weapons, grenades and gadgets follow your hand instantly, aim with your " +
                 "camera and fly the way you throw them. Damage and explosions are still " +
                 "decided by the host, like normal. Vehicles, drones and the duck always " +
                 "use the game's normal sync (they move themselves). Only turn this off " +
-                "if an item misbehaves for you.");
+                "if an item misbehaves for you. Changes apply from the next level.");
             DisableTimeout = Config.Bind("1. Main", "No Timeout Kicks", true,
                 "Stops the game from kicking you out of the lobby during short lag spikes.");
             SmoothSync = Config.Bind("1. Main", "Smooth Enemies", true,
-                "Enemies and other host-controlled things move smoothly instead of stuttering.");
+                "Enemies and other host-controlled things move smoothly instead of stuttering. " +
+                "Takes effect on the next game launch.");
 
             // ---- 2. Fine-Tuning: the defaults are good. Touch only if asked to. ----
             const string tuning = "2. Fine-Tuning (defaults are good)";
