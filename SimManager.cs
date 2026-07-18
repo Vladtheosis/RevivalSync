@@ -41,6 +41,7 @@ namespace RevivalSync
             public float postThrowRamp;     // after the grace: fade corrections back in (no brake)
             public float noSnapTimer;       // recently thrown: landings glide to the host spot, never teleport
             public float hingeSyncPause;    // door we just pushed/released: settle window before host truth resumes
+            public bool droneExempt;        // magnet drone drives this object: vanilla sync until released
             public float desyncTimer;       // how long we've been far from the host's copy while holding
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
@@ -168,12 +169,12 @@ namespace RevivalSync
 
         internal static bool IsSuppressed(PhotonTransformView ptv)
         {
-            return ptv != null && byPtv.ContainsKey(ptv);
+            return ptv != null && byPtv.TryGetValue(ptv, out SimState st) && !st.droneExempt;
         }
 
         internal static bool IsRegistered(PhotonTransformView ptv)
         {
-            return ptv != null && byPtv.ContainsKey(ptv);
+            return ptv != null && byPtv.TryGetValue(ptv, out SimState st) && !st.droneExempt;
         }
 
         internal static bool IsLocalGrab(PhysGrabObject pgo)
@@ -185,7 +186,7 @@ namespace RevivalSync
         /// master-only physics paths (cart stabilization, velocity clamps) on the client.</summary>
         internal static bool HasPhysicsAuthority(PhysGrabObject pgo)
         {
-            return pgo != null && states.ContainsKey(pgo);
+            return pgo != null && states.TryGetValue(pgo, out SimState st) && !st.droneExempt;
         }
 
         /// <summary>True after a mid-hold handback: don't re-take grab authority until re-grabbed.</summary>
@@ -371,6 +372,7 @@ namespace RevivalSync
 
             SimState st = TryRegister(pgo);
             if (st == null) return;
+            if (st.droneExempt) return; // the drone drives it — grab stays vanilla
 
             if (!st.localGrab && Plugin.VerboseLogging.Value)
             {
@@ -531,6 +533,40 @@ namespace RevivalSync
 
         private static int tickCounter;
         private static float oneWayPing;
+
+        // ---- magnet drones: the drone provides the motion, so the host owns the target ----
+        private static AccessTools.FieldRef<ItemDrone, bool> droneMagnetActive;
+        private static AccessTools.FieldRef<ItemDrone, PhysGrabObject> droneMagnetTarget;
+        private static bool droneAccessorsTried;
+        internal static ItemDrone[] cachedDrones;
+        private static readonly HashSet<PhysGrabObject> droneTargets = new HashSet<PhysGrabObject>();
+
+        internal static void EnsureDroneAccessors()
+        {
+            if (droneAccessorsTried) return;
+            droneAccessorsTried = true;
+            try
+            {
+                droneMagnetActive = AccessTools.FieldRefAccess<ItemDrone, bool>("magnetActive");
+                droneMagnetTarget = AccessTools.FieldRefAccess<ItemDrone, PhysGrabObject>("magnetTargetPhysGrabObject");
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"Drone handoff disabled (game internals changed): {e.Message}");
+            }
+        }
+
+        private static void RebuildDroneTargets()
+        {
+            droneTargets.Clear();
+            if (droneMagnetActive == null || cachedDrones == null) return;
+            foreach (ItemDrone d in cachedDrones)
+            {
+                if (d == null || !droneMagnetActive(d)) continue;
+                PhysGrabObject t = droneMagnetTarget(d);
+                if (t != null) droneTargets.Add(t);
+            }
+        }
         private static bool wasClientInLobby;
         private static float lastTickFixedTime = -1f;
         private static bool tickMarker;
@@ -564,6 +600,7 @@ namespace RevivalSync
             if (states.Count == 0) return;
             tickCounter++;
             oneWayPing = PhotonNetwork.GetPing() * 0.0005f; // RTT ms → one-way seconds
+            RebuildDroneTargets();
 
             tickBuffer.Clear();
             tickBuffer.AddRange(states.Values);
@@ -617,6 +654,26 @@ namespace RevivalSync
                     Restore(st);
                     continue;
                 }
+
+                // "ownership follows whoever provides the motion": a magnet drone drives
+                // this object now, so the host owns it — vanilla sync until released.
+                // (Locally we'd simulate it at full weight while the host's copy floats
+                // feather-light: the "immovable object" bug.)
+                bool droneHeld = droneTargets.Count > 0 && droneTargets.Contains(st.pgo);
+                if (droneHeld != st.droneExempt)
+                {
+                    st.droneExempt = droneHeld;
+                    if (droneHeld)
+                    {
+                        if (st.localGrab) EndLocalGrab(st.pgo);
+                        Restore(st);
+                        if (Plugin.VerboseLogging.Value)
+                        {
+                            Plugin.Log.LogInfo($"[drone] {st.pgo.name}: magnet-grabbed — host drives it until released");
+                        }
+                    }
+                }
+                if (st.droneExempt) continue;
 
                 if (st.localGrab)
                 {
@@ -1331,6 +1388,8 @@ namespace RevivalSync
                     {
                         SimManager.TryRegister(pgo);
                     }
+                    SimManager.EnsureDroneAccessors();
+                    SimManager.cachedDrones = UnityEngine.Object.FindObjectsOfType<ItemDrone>();
                 }
             }
 

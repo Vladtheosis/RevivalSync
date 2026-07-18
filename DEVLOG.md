@@ -262,3 +262,17 @@ trails legitimately hit 3.8m at sprint. Consequences fixed:
   session once. Plugin copies the live log to BepInEx/RevivalSync-logs/session-*.log
   every 60s + on OnDestroy, keeps newest 10. File.Copy works while BepInEx holds the
   file (FileShare.Read).
+
+## 1.2.7 - drone handoff + the all-switches-off incident
+
+- July 18 sessions ("doors are shit again + insane desync"): the log archive earned its
+  keep immediately - headers showed SmoothSync: False, and the config had ALL FOUR main
+  switches off (user testing toggles). Most of the report was vanilla behavior. Rule for
+  future triage: CHECK THE LOADED-LINE + CONFIG STATE FIRST before hunting regressions.
+- Feather/magnet drones: drone applies OverrideMass(0.5)/OverrideZeroGravity/drag to its
+  magnetTargetPhysGrabObject HOST-SIDE only -> our full-weight local sim vs floating host
+  copy = "immovable object". Fix: droneExempt state - while any ItemDrone with
+  magnetActive targets a registered pgo (fields internal, FieldRefAccess, synced to
+  clients via RPCs), that object reverts to vanilla sync (IsSuppressed/IsRegistered/
+  HasPhysicsAuthority all false, StartLocalGrab refuses, Restore() seeds PTV on
+  transition). Consistent with the ownership rule: the DRONE provides the motion.

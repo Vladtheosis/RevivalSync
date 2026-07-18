@@ -2,6 +2,17 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.7
+
+- Fixed magnet drones (Feather etc.) making objects immovable: the drone applies its
+  physics (half mass, zero gravity, drag) on the host only, so your locally-simulated
+  copy stayed at full weight fighting a floating host copy. Following the mod's
+  ownership rule — the host owns whatever provides its own motion — a drone-grabbed
+  object now hands itself back to vanilla sync until the drone releases it
+- Note: if the whole game feels laggy/desynced, check that the switches in config
+  section "1. Main" are ON — they are the mod. All four had been switched off in
+  testing, which plays exactly like vanilla (laggy doors and all)
+
 # 1.2.6
 
 - Held carts can no longer vanish from your hands: the anti-stuck teleport mistook a
