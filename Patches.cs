@@ -213,6 +213,11 @@ namespace RevivalSync.Patches
             }
 
             Add(typeof(PhysGrabObject), "FixedUpdate");
+            // the override system (mass/drag/torque values set by item code, our feather
+            // replication, hinge drag...) is master-gated INSIDE this method — without
+            // this swap, every Override* call on a client is a silent no-op. The original
+            // NetworkingReworked transpiled exactly this method for the same reason.
+            Add(typeof(PhysGrabObject), "OverrideTimersTick");
             Add(typeof(PhysGrabCart), "FixedUpdate");
             Add(typeof(PhysGrabCart), "CartSteer");
             if (Plugin.SimulateHinges.Value)

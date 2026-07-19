@@ -291,3 +291,17 @@ trails legitimately hit 3.8m at sprint. Consequences fixed:
 - Convergence backstop in TickShadow: >1.5m from target for >5s -> Snap. Promise:
   loot always ends up where the host sees it.
 - UnityEngine.Input needs UnityEngine.InputLegacyModule reference (type-forwarded).
+
+## 1.2.9 - the override gate + bounded cargo (113 F8 presses of evidence)
+
+- PhysGrabObject.OverrideTimersTick has an INTERNAL master gate (line ~617) right before
+  OverrideVariousTick/OverrideStrengthTick/mass consumption: EVERY Override* call on a
+  client has been a silent no-op this whole time (feather mass, tool torque/drag boosts,
+  hinge drag). NR transpiled exactly this method - now understood WHY, and adopted
+  (CartAuthorityPatch target). Lesson: when replicating game behavior locally, verify
+  the CONSUMING code path runs client-side, not just the setter.
+- Cart cargo (ridingTick) had NO safety net: exempt from blends, backstop, wedge, snap.
+  Busy lobby = carts always in use = most loot permanently exempt = unbounded drift =
+  "insane desync", and the 5s backstop could never fire for exactly the objects that
+  needed it. Riders now Snap at >3m from hostPos (bounded riding).
+- Auto Resync Seconds config (0=off): automated ResyncAll for players who want it.

@@ -922,6 +922,14 @@ namespace RevivalSync
             {
                 if (st.rb.isKinematic) st.rb.isKinematic = false;
                 st.hostTeleport = false;
+                // bounded riding: pure local physics inside the cart, but never let a
+                // rider stray far from the host's idea of it — unbounded cargo drift on
+                // always-in-use carts was the standing "insane desync" (the backstop and
+                // blends never run for riders, so this is their only safety net)
+                if (st.hasHostState && Vector3.Distance(st.rb.position, st.hostPos) > 3f)
+                {
+                    Snap(st, "cargo strayed too far while riding");
+                }
                 return;
             }
 
@@ -1405,6 +1413,7 @@ namespace RevivalSync
         private static float nextStatsLog;
         private static int lastPacketCount;
         private static int lastFrame = -1;
+        private static float nextAutoResync;
 
         internal static void FrameUpdate()
         {
@@ -1465,10 +1474,17 @@ namespace RevivalSync
                 }
             }
 
-            if (SimManager.Ready && SimManager.IsClientInLobby()
-                && UnityEngine.Input.GetKeyDown(Plugin.ResyncKey.Value))
+            if (SimManager.Ready && SimManager.IsClientInLobby())
             {
-                SimManager.ResyncAll();
+                if (UnityEngine.Input.GetKeyDown(Plugin.ResyncKey.Value))
+                {
+                    SimManager.ResyncAll();
+                }
+                if (Plugin.AutoResyncSeconds.Value > 0f && Time.unscaledTime >= nextAutoResync)
+                {
+                    nextAutoResync = Time.unscaledTime + Mathf.Max(5f, Plugin.AutoResyncSeconds.Value);
+                    SimManager.ResyncAll();
+                }
             }
 
             Plugin.ApplyPhotonSettings();

@@ -2,6 +2,21 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.9
+
+- Found the standing desync: loot riding in carts ran pure local physics with NO safety
+  net, and in a busy lobby carts are always "in use" — cargo drifted unboundedly and
+  nothing ever corrected it (this is why the 5-second teleport never fired). Riders now
+  snap back whenever they stray more than 3m from the host's position
+- Fixed the feather drone properly: the game's override system (mass/drag/torque) turned
+  out to be host-only INSIDE the method that applies it — every override the mod set on
+  clients was silently ignored. The original NetworkingReworked patched this exact
+  method; now we do too. Feather-carried loot finally feels light
+- New: Auto Resync Seconds (default 0 = off) — set it and the mod presses the resync
+  key for you automatically at that interval, no more F8 spam
+- Note: the drone itself flying with a slight delay is by design (it pilots itself, so
+  the host owns it, like enemies)
+
 # 1.2.8
 
 - Fixed the drone handoff for real: 1.2.7's version fought the player's own grab (the
