@@ -305,3 +305,17 @@ trails legitimately hit 3.8m at sprint. Consequences fixed:
   "insane desync", and the 5s backstop could never fire for exactly the objects that
   needed it. Riders now Snap at >3m from hostPos (bounded riding).
 - Auto Resync Seconds config (0=off): automated ResyncAll for players who want it.
+
+## 1.2.10 - the inside-the-tolerance desyncs
+
+Log pattern to remember: cargo-stray fired 1x, backstop 0x, yet the player saw stuck
+loot everywhere -> the desync lived INSIDE the tolerances:
+- Riding cargo (pure local): bumps ejected loot locally to lie BESIDE the cart, under
+  the 3m bound, uncorrected forever. Fix: gentle keep-in-basket velocity pull beyond
+  0.3m (gain 2/s cap 2m/s blend 0.3), snap at 2m.
+- rb.IsSleeping() early-return in rest-settle let objects that fell asleep in the WRONG
+  place sleep forever, immune to every correction. Fix: only skip when within 0.5m of
+  hostPos; otherwise WakeUp and glide home. (Sleep = the great correction-bypass.)
+- Drones: blanket blocklist made CARRIED drones vanilla-laggy (the old shop-item lag).
+  Now registered like items; dynamically droneExempt while toggleState on (deployed,
+  flies itself) or while magnet-carrying. ItemToggle.toggleState is public.

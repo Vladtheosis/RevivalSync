@@ -43,6 +43,8 @@ namespace RevivalSync
             public float hingeSyncPause;    // door we just pushed/released: settle window before host truth resumes
             public bool droneExempt;        // magnet drone drives this object: vanilla sync until released
             public float farTimer;          // shadowed object stuck far from host: convergence backstop
+            public ItemDrone droneSelf;     // this object IS a drone: host-owned only while flying
+            public ItemToggle droneToggle;  // (toggled on = deployed = it moves itself)
             public float desyncTimer;       // how long we've been far from the host's copy while holding
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
@@ -232,8 +234,9 @@ namespace RevivalSync
                 foreach (Component c in o.GetComponentsInParent<Component>(true))
                 {
                     if (c == null) continue;
-                    string n = c.GetType().Name;
-                    if (n.StartsWith("ItemDrone") || n.StartsWith("ItemRubberDuck"))
+                    // drones are only host-owned while FLYING (dynamic exemption in
+                    // Tick) — a carried drone is just an item and deserves instant feel
+                    if (c.GetType().Name.StartsWith("ItemRubberDuck"))
                     {
                         return false;
                     }
@@ -340,6 +343,11 @@ namespace RevivalSync
                 st.gun = pgo.GetComponentInChildren<ItemGun>(true);
                 st.melee = pgo.GetComponentInChildren<ItemMelee>(true);
                 st.mirrorHeldRot = st.gun == null && st.melee == null;
+                st.droneSelf = pgo.GetComponentInChildren<ItemDrone>(true);
+                if (st.droneSelf != null)
+                {
+                    st.droneToggle = pgo.GetComponentInChildren<ItemToggle>(true);
+                }
             }
 
             // seed from whatever the transform view last received, so we have a sane
@@ -661,8 +669,9 @@ namespace RevivalSync
                 // holding it (that is the feather drone's whole purpose: helping a player
                 // carry heavy loot). The player's grab always wins; 1.2.7 exempted held
                 // objects too and the fight caused an infinite exempt/re-register flap.
-                bool droneOnly = droneTargetMap.Count > 0 && !st.localGrab
-                    && droneTargetMap.ContainsKey(st.pgo);
+                bool droneOnly = !st.localGrab
+                    && ((droneTargetMap.Count > 0 && droneTargetMap.ContainsKey(st.pgo))
+                        || (st.droneSelf != null && st.droneToggle != null && st.droneToggle.toggleState));
                 if (droneOnly != st.droneExempt)
                 {
                     st.droneExempt = droneOnly;
@@ -922,13 +931,23 @@ namespace RevivalSync
             {
                 if (st.rb.isKinematic) st.rb.isKinematic = false;
                 st.hostTeleport = false;
-                // bounded riding: pure local physics inside the cart, but never let a
-                // rider stray far from the host's idea of it — unbounded cargo drift on
-                // always-in-use carts was the standing "insane desync" (the backstop and
-                // blends never run for riders, so this is their only safety net)
-                if (st.hasHostState && Vector3.Distance(st.rb.position, st.hostPos) > 3f)
+                // bounded riding: local physics inside the cart, but with a gentle
+                // keep-in-the-basket pull — zero correction let bumps eject loot locally
+                // to lie BESIDE the cart within the old bound ("loot stuck outside the
+                // cart"), while hard corrections rattle it. Beyond 2m it snaps.
+                if (st.hasHostState)
                 {
-                    Snap(st, "cargo strayed too far while riding");
+                    float rideDist = Vector3.Distance(st.rb.position, st.hostPos);
+                    if (rideDist > 2f)
+                    {
+                        Snap(st, "cargo strayed too far while riding");
+                        return;
+                    }
+                    if (rideDist > 0.3f)
+                    {
+                        Vector3 pull = Vector3.ClampMagnitude((st.hostPos - st.rb.position) * 2f, 2f);
+                        st.rb.velocity = Vector3.Lerp(st.rb.velocity, st.rb.velocity + pull, 0.3f);
+                    }
                 }
                 return;
             }
@@ -1036,7 +1055,15 @@ namespace RevivalSync
 
             if (st.hostSleeping || hostIdle)
             {
-                if (st.rb.IsSleeping()) return; // both at rest — leave it alone (cheap)
+                if (st.rb.IsSleeping())
+                {
+                    // asleep NEAR the host's pose: leave it alone (cheap). Asleep in the
+                    // WRONG place: it would sleep there forever, immune to every
+                    // correction ("objects aren't where they're supposed to be") —
+                    // wake it and let the glide bring it home.
+                    if ((st.rb.position - st.hostPos).sqrMagnitude < 0.25f) return;
+                    st.rb.WakeUp();
+                }
                 if ((st.rb.position - st.hostPos).sqrMagnitude < 0.0025f
                     && Quaternion.Angle(st.rb.rotation, st.hostRot) < 3f)
                 {

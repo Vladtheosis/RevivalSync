@@ -2,6 +2,18 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.10
+
+- Fixed loot lying beside the cart while the host sees it inside: cart cargo now gets a
+  gentle keep-in-the-basket pull (strong enough to stay aboard, soft enough not to
+  rattle), and the stray-snap tightened to 2m
+- Fixed objects resting in the wrong place forever: an object that fell asleep away from
+  the host's position was immune to every correction — sleeping objects now wake up
+  whenever they slept more than half a meter from where the host has them, then glide home
+- Fixed laggy drone carrying: drones are now simulated like normal items while you hold
+  or carry them (instant hand feel) and only hand over to the host while actually flying
+  (toggled on) or magnet-carrying something
+
 # 1.2.9
 
 - Found the standing desync: loot riding in carts ran pure local physics with NO safety
