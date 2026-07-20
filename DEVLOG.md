@@ -328,3 +328,23 @@ ALWAYS confirm after building while a session may be open:
   [Diagnostics.FileVersionInfo]::GetVersionInfo("<profile>\Revival-RevivalSync\RevivalSync.dll").ProductVersion
 and cross-check the log's "RevivalSync X.Y.Z loaded" line against the version you expect
 BEFORE diagnosing "it is still broken". Same-version + same-log = not tested yet.
+
+## 1.2.11 - CARGO MUST BE CORRECTED IN THE CART FRAME, NEVER IN WORLD SPACE
+
+First real 1.2.10 log. Cart cargo never snapped/strayed (bounds looked fine) yet loot
+"stuck out and fell out, like it is slippery". Cause was my own 1.2.10 keep-in-basket
+pull: it pulled cargo toward st.hostPos (WORLD). The host copy of a moving cart trails
+ours by one-way ping, so its cargo positions trail too - the pull therefore shoved every
+item BACKWARD relative to the basket, every tick, ejecting it over the rim. More speed =
+more ejection.
+RULE: an object carried by another object is only meaningfully "in the right place"
+RELATIVE TO ITS CARRIER. Correct in the carrier frame:
+  hostLocal = Inverse(cart.hostRot) * (rider.hostPos - cart.hostPos)
+  want      = cart.rb.position + cart.rb.rotation * hostLocal
+Lag cancels out entirely. >1.5m err = place it back (with cart velocity, not zero);
+>0.15m = soft velocity settle (6/s, cap 4, *dt). SimState.ridingCart holds the carrier.
+Same rule will apply to any future carrier (conveyors, vehicles, players).
+
+Also: host sets the PTV teleport flag continuously on some objects (death heads: 3710
+snaps in one session, 1096 at dist<0.05m). Ignore teleport flags when we are already
+within 0.1m - pure spam + needless physics writes.

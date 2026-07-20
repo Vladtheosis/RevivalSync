@@ -2,6 +2,17 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.11
+
+- Fixed slippery cart loot for real: cargo was being pulled toward where the host has it
+  in the WORLD, but the host's copy of a moving cart trails yours by your ping — so every
+  tick the loot got shoved backwards out of the basket. Cargo is now corrected relative
+  to its own cart, so the lag cancels out and items simply sit where the host has them
+  inside the basket. Anything genuinely out of place is returned to its spot
+- Stopped thousands of pointless teleport-snaps: some objects (dead players' heads above
+  all) get flagged as teleporting by the host every few frames even when nothing moved —
+  one session logged 3710 of them for a single head. Only real teleports act now
+
 # 1.2.10
 
 - Fixed loot lying beside the cart while the host sees it inside: cart cargo now gets a

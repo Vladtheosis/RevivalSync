@@ -49,6 +49,7 @@ namespace RevivalSync
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
             public int ridingTick;          // == current tick when sitting inside a locally-held cart
+            public SimState ridingCart;     // the cart it rides — corrections are relative to IT, not the world
             public bool mirrorHeldRot;      // item without local orientation logic: copy host rotation while held
             public ItemGun gun;             // weapons compute their hold orientation locally
             public ItemMelee melee;         // (from their own tuning fields — no network in the loop)
@@ -635,6 +636,7 @@ namespace RevivalSync
                     if (items[i] != null && states.TryGetValue(items[i], out SimState rider))
                     {
                         rider.ridingTick = tickCounter;
+                        rider.ridingCart = st;
                     }
                 }
             }
@@ -931,22 +933,36 @@ namespace RevivalSync
             {
                 if (st.rb.isKinematic) st.rb.isKinematic = false;
                 st.hostTeleport = false;
-                // bounded riding: local physics inside the cart, but with a gentle
-                // keep-in-the-basket pull — zero correction let bumps eject loot locally
-                // to lie BESIDE the cart within the old bound ("loot stuck outside the
-                // cart"), while hard corrections rattle it. Beyond 2m it snaps.
-                if (st.hasHostState)
+                // Cargo is corrected RELATIVE TO ITS CART, never to a world position.
+                // The host's copy of a moving cart trails ours by the ping, so pulling
+                // cargo toward the host's absolute position shoves it backwards out of
+                // the basket every tick — that was the "loot is slippery / falls out".
+                // In the cart's own frame the lag cancels out: we only fix where the
+                // item sits INSIDE the basket.
+                SimState cart = st.ridingCart;
+                if (st.hasHostState && cart != null && cart.hasHostState
+                    && cart.rb != null && cart.pgo != null)
                 {
-                    float rideDist = Vector3.Distance(st.rb.position, st.hostPos);
-                    if (rideDist > 2f)
+                    Vector3 hostLocal = Quaternion.Inverse(cart.hostRot) * (st.hostPos - cart.hostPos);
+                    Vector3 want = cart.rb.position + cart.rb.rotation * hostLocal;
+                    Vector3 err = want - st.rb.position;
+                    float e = err.magnitude;
+                    if (e > 1.5f)
                     {
-                        Snap(st, "cargo strayed too far while riding");
-                        return;
+                        // genuinely fell out / never made it in: put it where the host has it
+                        st.rb.position = want;
+                        st.rb.rotation = st.hostRot;
+                        st.rb.velocity = cart.rb.velocity;
+                        st.rb.angularVelocity = Vector3.zero;
+                        if (Plugin.VerboseLogging.Value)
+                        {
+                            Plugin.Log.LogInfo($"[cargo] {st.pgo.name}: returned to its place in the cart (was {e:F1}m off)");
+                        }
                     }
-                    if (rideDist > 0.3f)
+                    else if (e > 0.15f)
                     {
-                        Vector3 pull = Vector3.ClampMagnitude((st.hostPos - st.rb.position) * 2f, 2f);
-                        st.rb.velocity = Vector3.Lerp(st.rb.velocity, st.rb.velocity + pull, 0.3f);
+                        // settle it into place without fighting the cart's motion
+                        st.rb.velocity += Vector3.ClampMagnitude(err * 6f, 4f) * Time.fixedDeltaTime;
                     }
                 }
                 return;
@@ -979,8 +995,15 @@ namespace RevivalSync
             if (st.hostTeleport)
             {
                 st.hostTeleport = false;
-                Snap(st, "host teleported it");
-                return;
+                // Some objects (death heads especially) get the teleport flag set by the
+                // host constantly. When our copy is already there it is a pointless
+                // physics write and thousands of log lines — one session logged 3710 of
+                // them for a single corpse head. Only act on real teleports.
+                if ((st.rb.position - st.hostPos).sqrMagnitude > 0.01f)
+                {
+                    Snap(st, "host teleported it");
+                    return;
+                }
             }
 
             // A fresh local throw: the host still thinks the object is in our hand, so
