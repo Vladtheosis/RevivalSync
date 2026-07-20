@@ -368,3 +368,26 @@ objects there and the host STREAMS that position. Blending toward it flings our 
 skyward -> "beyond snap distance" -> snap back -> repeat (272x on scenery in one session,
 same few decoration valuables). Guard: skip sync when hostPos is within 5m of the parked
 position. Watch for this class: host positions that are not real gameplay positions.
+
+## 1.2.13 - passive sync reverted to NetworkingReworked's four lines
+
+TickShadow correction had grown to ~80 lines / 8 interacting mechanisms. NR's entire
+passive sync (FakeOwnershipController.ApplyPassiveSync) is:
+    rb.position        = Lerp (rb.position,        state.position,        0.075)
+    rb.rotation        = Slerp(rb.rotation,        state.rotation,        0.075)
+    rb.velocity        = Lerp (rb.velocity,        state.velocity,        0.075)
+    rb.angularVelocity = Lerp (rb.angularVelocity, state.angularVelocity, 0.075)
+...guarded only by !locallyGrabbed && (!inCart || !cartHeld). That is all of it.
+
+WHY OURS KEPT FAILING: every refinement (ping+age extrapolation, hostIdle, deadbands,
+error-scaled velocity steering, corrCap, wedge timers) made the TARGET MOVE BETWEEN
+PACKETS. A moving target + per-tick correction = the fight that showed up as vibration,
+"weak" holds, slippery cargo, mid-air braking. NR's target is stationary between packets,
+so a plain lerp is an exponential decay: smooth, convergent, unable to fight physics.
+Also reverted CacheHostState to store the RAW streamed position (NR read the direction
+slot and ignored it) - the dir*lag lead was the same moving-target bug at the source.
+
+KEPT deliberately (not in NR, earned here): pooled/parked-object guard (y=3000),
+HostStalled guard, hostKinematic follow, hinge system, throw grace + ramp, cargo riding,
+snap distance, 5s convergence backstop, F8 ResyncAll.
+RULE GOING FORWARD: if a fix requires the sync target to move, it is the wrong fix.

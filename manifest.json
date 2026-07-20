@@ -1,6 +1,6 @@
 {
     "name": "RevivalSync",
-    "version_number": "1.2.12",
+    "version_number": "1.2.13",
     "website_url": "https://github.com/Vladtheosis/RevivalSync",
     "description": "[Experimental - bugs happen, but plays fine] Replacement for NetworkingReworked. Singleplayer-feel multiplayer for R.E.P.O.: instant carts, doors, items, loot, no timeout kicks. Works with unmodded hosts. Toggle off anything odd. Made by Revival.",
     "dependencies": [

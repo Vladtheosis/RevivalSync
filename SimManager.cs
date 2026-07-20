@@ -304,9 +304,11 @@ namespace RevivalSync
                     st.hostKinematic = kinematic;
                     st.hostVel = vel;
                     st.hostAngVel = angVel;
-                    // clamped: Photon clock noise must not kick host positions around
-                    float lag = Mathf.Min(Mathf.Abs((float)(PhotonNetwork.Time - networkTime / 1000.0)), 0.3f);
-                    st.hostPos = pos + dir * lag;
+                    // NR stored the streamed position as-is (it read the direction slot and
+                    // ignored it). Extrapolating by clock lag makes the blend target jump
+                    // around between packets, which every "vibrating / jittery" report has
+                    // traced back to. Keep it exactly where the host said it was.
+                    st.hostPos = pos;
                     st.hostRot = rot;
                     st.hasHostState = true;
                     st.lastPacketTime = Time.unscaledTime;
@@ -569,7 +571,6 @@ namespace RevivalSync
         // ---- per-physics-tick driver ----
 
         private static int tickCounter;
-        private static float oneWayPing;
         private static int cargoStagger;
 
         // ---- magnet drones: the drone provides the motion, so the host owns the target ----
@@ -638,7 +639,6 @@ namespace RevivalSync
 
             if (states.Count == 0) return;
             tickCounter++;
-            oneWayPing = PhotonNetwork.GetPing() * 0.0005f; // RTT ms → one-way seconds
             RebuildDroneTargets();
 
             tickBuffer.Clear();
@@ -1029,26 +1029,12 @@ namespace RevivalSync
             // the regular glide reconciles whatever small difference remains afterwards.
             if (st.postThrowTimer > 0f) return;
 
-            // Photon only sends packets when an object's data CHANGES. Silence therefore
-            // means "the host's copy is exactly at hostPos, at rest" — treating stale
-            // velocities as live is what made shadowed objects vibrate and drift.
-            float packetAge = Time.unscaledTime - st.lastPacketTime;
-            bool hostIdle = packetAge > 0.35f;
-            // while packets flow, lead the target by the data's age so movement is
-            // continuous between packets instead of sawtoothing toward stale positions
-            // lead by data age PLUS one-way ping: the host's copy systematically trails
-            // a moving object by the ping, and following the un-led position is what
-            // braked fast throws mid-air ("catching its breath")
-            Vector3 targetPos = hostIdle
-                ? st.hostPos
-                : st.hostPos + st.hostVel * Mathf.Min(packetAge + oneWayPing, 0.35f);
-            Vector3 targetVel = hostIdle ? Vector3.zero : st.hostVel;
-            Vector3 targetAngVel = hostIdle ? Vector3.zero : st.hostAngVel;
-
+            // the host holds it kinematic (another player carrying it, a system owning it):
+            // follow its state exactly, no physics of our own
             if (st.hostKinematic && !st.isHinge)
             {
                 if (!st.rb.isKinematic) st.rb.isKinematic = true;
-                st.rb.MovePosition(targetPos);
+                st.rb.MovePosition(st.hostPos);
                 st.rb.MoveRotation(st.hostRot);
                 return;
             }
@@ -1093,108 +1079,65 @@ namespace RevivalSync
                 return;
             }
 
-            if (st.hostSleeping || hostIdle)
+            // both copies at rest and already agreeing: leave it alone so it can sleep
+            if (st.hostSleeping
+                && (st.rb.position - st.hostPos).sqrMagnitude < 0.0025f
+                && Quaternion.Angle(st.rb.rotation, st.hostRot) < 3f)
             {
-                if (st.rb.IsSleeping())
-                {
-                    // asleep NEAR the host's pose: leave it alone (cheap). Asleep in the
-                    // WRONG place: it would sleep there forever, immune to every
-                    // correction ("objects aren't where they're supposed to be") —
-                    // wake it and let the glide bring it home.
-                    if ((st.rb.position - st.hostPos).sqrMagnitude < 0.25f) return;
-                    st.rb.WakeUp();
-                }
-                if ((st.rb.position - st.hostPos).sqrMagnitude < 0.0025f
-                    && Quaternion.Angle(st.rb.rotation, st.hostRot) < 3f)
+                if (!st.rb.IsSleeping())
                 {
                     st.rb.velocity = Vector3.zero;
                     st.rb.angularVelocity = Vector3.zero;
-                    st.rb.position = st.hostPos;
-                    st.rb.rotation = st.hostRot;
-                    if (st.hostSleeping) st.rb.Sleep();
-                    return;
+                    st.rb.Sleep();
                 }
-                // far from the host's rest pose: fall through and blend toward it
+                return;
             }
+            // asleep somewhere the host does not have it: it would rest there forever,
+            // immune to the blend below — wake it so it can be brought home
+            if (st.rb.IsSleeping()) st.rb.WakeUp();
 
-            float dist = Vector3.Distance(st.rb.position, targetPos);
-            if (dist > Plugin.SnapDistance.Value && st.postThrowRamp <= 0f)
+            float dist = Vector3.Distance(st.rb.position, st.hostPos);
+            if (dist > Plugin.SnapDistance.Value && st.postThrowRamp <= 0f && st.noSnapTimer <= 0f)
             {
                 Snap(st, "beyond snap distance");
                 return;
             }
 
-            // wedged on geometry: blending grinds against the wall forever, snap it free
-            if (dist > 1.5f && st.rb.velocity.sqrMagnitude < 1f && st.postThrowTimer <= 0f
-                && st.noSnapTimer <= 0f)
-            {
-                st.stuckTimer += Time.fixedDeltaTime;
-                if (st.stuckTimer > 1.2f)
-                {
-                    st.stuckTimer = 0f;
-                    Snap(st, "wedged in geometry, freeing to host position");
-                    return;
-                }
-            }
-            else
-            {
-                st.stuckTimer = 0f;
-            }
-
-            float a = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
-            const float velBlend = 0.5f;
-
-            // Correct through VELOCITY, not per-tick position writes: MovePosition on a
-            // dynamic body fights its own physics integration 50x/s and renders as
-            // vibration ("phone on max"). Folding the position error into the velocity
-            // target lets the body glide to the host state and keeps rigidbody
-            // interpolation smooth.
-            Vector3 posErr = targetPos - st.rb.position;
-            float errMag = posErr.magnitude;
-            // convergence backstop (user-requested): if the glide hasn't brought an
-            // object home after 5 seconds — wedged behind geometry, bad luck — teleport
-            // it. The promise is that loot ALWAYS ends up where the host sees it.
-            if (errMag > 1.5f)
+            // convergence backstop: if the blend hasn't brought an object home after five
+            // seconds (wedged behind geometry, bad luck), teleport it. The promise is that
+            // loot always ends up where the host sees it.
+            if (dist > 1.5f)
             {
                 st.farTimer += Time.fixedDeltaTime;
-                if (st.farTimer > 5f)
+                if (st.farTimer > 5f && st.noSnapTimer <= 0f && st.postThrowRamp <= 0f)
                 {
                     st.farTimer = 0f;
                     Snap(st, "stuck away from host position too long");
                     return;
                 }
             }
-            else if (errMag < 0.75f)
+            else if (dist < 0.75f)
             {
                 st.farTimer = 0f;
             }
-            if (errMag > 0.02f) // deadband: don't chase packet noise at equilibrium
-            {
-                // error-scaled pull: gentle when nearly in place, firm when far — the
-                // object glides to the host's state quickly but is never position-forced
-                // (position forcing was the "jiggles its way over" look; slow flat gain
-                // was the "and it's kinda far off" trail).
-                // After a local throw the correction fades in from zero: the object first
-                // FOLLOWS the host's velocity, then converges — no mid-air brake.
-                float corrScale = 1f - Mathf.Clamp01(st.postThrowRamp / 0.4f);
-                float gain = a * 25f * (1f + errMag * 2f) * corrScale;
-                // a resting host copy means we're just settling a landing mismatch —
-                // glide over calmly instead of zipping (which reads as a snap)
-                float corrCap = hostIdle ? 2.5f : 10f;
-                Vector3 desiredVel = targetVel + Vector3.ClampMagnitude(posErr * gain, corrCap);
-                st.rb.velocity = Vector3.Lerp(st.rb.velocity, desiredVel, velBlend);
-            }
-            else
-            {
-                st.rb.velocity = Vector3.Lerp(st.rb.velocity, targetVel, velBlend);
-            }
 
-            // rotation gets a small deadband too, so settled objects never shimmer
-            if (Quaternion.Angle(st.rb.rotation, st.hostRot) > 1f)
+            // ---- passive sync: the original NetworkingReworked's, kept as it was ----
+            // Position, rotation, velocity and angular velocity are each eased toward the
+            // host's last streamed state every physics tick. That is the whole algorithm.
+            // Everything we layered on top of it through 1.2.x — extrapolating the target
+            // by ping, idle detection, deadbands, velocity steering — each fixed one
+            // symptom and caused another, because they all made the target MOVE between
+            // packets. A still target converges smoothly and cannot fight the physics.
+            float a = Mathf.Clamp01(Plugin.PassiveSyncStrength.Value);
+            if (st.postThrowRamp > 0f)
             {
-                st.rb.MoveRotation(Quaternion.Slerp(st.rb.rotation, st.hostRot, a));
-                st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, targetAngVel, a);
+                // ease back in after a throw or a cart unload instead of grabbing hold
+                a *= 1f - Mathf.Clamp01(st.postThrowRamp / 0.5f);
             }
+            st.rb.position = Vector3.Lerp(st.rb.position, st.hostPos, a);
+            st.rb.rotation = Quaternion.Slerp(st.rb.rotation, st.hostRot, a);
+            st.rb.velocity = Vector3.Lerp(st.rb.velocity, st.hostVel, a);
+            st.rb.angularVelocity = Vector3.Lerp(st.rb.angularVelocity, st.hostAngVel, a);
         }
 
         /// <summary>Called from the hinge collision hook: if the local player or something

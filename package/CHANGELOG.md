@@ -2,6 +2,20 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.13
+
+- Loot syncing rebuilt on the original NetworkingReworked's code (credit: readthisifbad).
+  Objects you aren't holding are simply eased toward the host's last known state every
+  physics tick — position, rotation and both velocities — and that's the entire algorithm,
+  the same one the old mod used. Everything layered on top of it over 1.2.x (predicting
+  the target by ping, idle detection, deadbands, velocity steering, wedge timers) each
+  fixed one symptom and caused the next, because they all made the sync target move
+  between packets. A still target converges smoothly and can't fight the physics
+- The host's position is also taken exactly as sent again, instead of being projected
+  forward by network lag — that projection was behind the vibrating and jittering reports
+- Kept on top of it: the stuck-loot teleport backstop, the resync key, throw grace, cart
+  cargo riding free, and the pooled-object guard
+
 # 1.2.12
 
 **Still experimental:** this mod predicts physics on your machine, so occasional oddities
