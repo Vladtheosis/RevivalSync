@@ -6,9 +6,10 @@ Made by **Revival**
 (issues, bug reports with logs, and pull requests are all appreciated; see `DEVLOG.md` there
 for the architecture and lessons learned)
 
-One mod that makes R.E.P.O. multiplayer feel like singleplayer — the successor to (and
-merger of) NetworkingRevived and NetworkTweaksRevived, rebuilt on the architecture of the
-original NetworkingReworked with its host-state capture technique.
+One mod that makes R.E.P.O. multiplayer feel like singleplayer — **the replacement for
+NetworkingReworked**, which no longer works on current game versions. Also replaces (and
+merges) NetworkingRevived and NetworkTweaksRevived. Rebuilt on NetworkingReworked's
+architecture, including its host-state capture technique.
 
 > **Still experimental.** It should work fine for normal play, but this mod predicts
 > physics locally, so odd behaviour can still show up — an item in the wrong spot, a door
