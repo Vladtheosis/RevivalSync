@@ -49,7 +49,8 @@ namespace RevivalSync
             public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
             public int ridingTick;          // == current tick when sitting inside a locally-held cart
-            public SimState ridingCart;     // the cart it rides — corrections are relative to IT, not the world
+            public SimState ridingCart;     // the cart it rides
+            public bool wasRiding;          // rode a cart last tick: schedule a gentle staged return
             public bool mirrorHeldRot;      // item without local orientation logic: copy host rotation while held
             public ItemGun gun;             // weapons compute their hold orientation locally
             public ItemMelee melee;         // (from their own tuning fields — no network in the loop)
@@ -82,6 +83,33 @@ namespace RevivalSync
         /// player leaving, or dead connection. A single quiet object just means its host copy
         /// is at rest; world-wide silence means there is nothing live to sync toward.</summary>
         internal static bool HostStalled => Time.unscaledTime - lastCaptureTime > 2f;
+
+        private static Vector3 disabledPos = new Vector3(0f, 3000f, 0f);
+        private static bool disabledPosRead;
+
+        /// <summary>Where the game parks deactivated/pooled objects (far above the map).
+        /// The host streams that position like any other, and blending toward it launches
+        /// our copy off the level — hence "objects aren't where they should be".</summary>
+        private static Vector3 DisabledPosition()
+        {
+            if (!disabledPosRead)
+            {
+                try
+                {
+                    if (AssetManager.instance != null)
+                    {
+                        var f = AccessTools.Field(typeof(AssetManager), "physDisabledPosition");
+                        if (f != null)
+                        {
+                            disabledPos = (Vector3)f.GetValue(AssetManager.instance);
+                            disabledPosRead = true;
+                        }
+                    }
+                }
+                catch { disabledPosRead = true; } // keep the known default
+            }
+            return disabledPos;
+        }
 
         // ---- reflection accessors into game internals ----
         private static AccessTools.FieldRef<PhysGrabObject, bool> pgoIsMaster;
@@ -542,6 +570,7 @@ namespace RevivalSync
 
         private static int tickCounter;
         private static float oneWayPing;
+        private static int cargoStagger;
 
         // ---- magnet drones: the drone provides the motion, so the host owns the target ----
         private static AccessTools.FieldRef<ItemDrone, bool> droneMagnetActive;
@@ -928,44 +957,28 @@ namespace RevivalSync
             // deactivated objects sit kinematic in limbo (extracted/destroyed) — hands off
             if (!pgoIsActive(st.pgo)) return;
 
-            // cargo riding a cart the local player drags: pure local physics, no blending
+            // CART CARGO — the original NetworkingReworked's model (credit: readthisifbad).
+            // While the cart is in use, cargo gets NO sync of any kind: it simply rides in
+            // local physics, in a local basket, with local collisions. Every attempt to
+            // correct it mid-haul has failed differently — blending rattles it, world-space
+            // pulls shove it out (the host's cart trails by the ping), frame-relative pulls
+            // fight the basket's own collisions. The basket already holds the loot; the
+            // network does not need to. Divergence is reconciled once the haul ends.
             if (st.ridingTick == tickCounter)
             {
                 if (st.rb.isKinematic) st.rb.isKinematic = false;
                 st.hostTeleport = false;
-                // Cargo is corrected RELATIVE TO ITS CART, never to a world position.
-                // The host's copy of a moving cart trails ours by the ping, so pulling
-                // cargo toward the host's absolute position shoves it backwards out of
-                // the basket every tick — that was the "loot is slippery / falls out".
-                // In the cart's own frame the lag cancels out: we only fix where the
-                // item sits INSIDE the basket.
-                SimState cart = st.ridingCart;
-                if (st.hasHostState && cart != null && cart.hasHostState
-                    && cart.rb != null && cart.pgo != null)
-                {
-                    Vector3 hostLocal = Quaternion.Inverse(cart.hostRot) * (st.hostPos - cart.hostPos);
-                    Vector3 want = cart.rb.position + cart.rb.rotation * hostLocal;
-                    Vector3 err = want - st.rb.position;
-                    float e = err.magnitude;
-                    if (e > 1.5f)
-                    {
-                        // genuinely fell out / never made it in: put it where the host has it
-                        st.rb.position = want;
-                        st.rb.rotation = st.hostRot;
-                        st.rb.velocity = cart.rb.velocity;
-                        st.rb.angularVelocity = Vector3.zero;
-                        if (Plugin.VerboseLogging.Value)
-                        {
-                            Plugin.Log.LogInfo($"[cargo] {st.pgo.name}: returned to its place in the cart (was {e:F1}m off)");
-                        }
-                    }
-                    else if (e > 0.15f)
-                    {
-                        // settle it into place without fighting the cart's motion
-                        st.rb.velocity += Vector3.ClampMagnitude(err * 6f, 4f) * Time.fixedDeltaTime;
-                    }
-                }
+                st.wasRiding = true;
                 return;
+            }
+            if (st.wasRiding)
+            {
+                // haul over: NR re-synced the cart first, then its cargo staggered a few
+                // hundredths apart, so the load settles item by item instead of the whole
+                // pile jerking at once. Our correction ramp does the same job smoothly.
+                st.wasRiding = false;
+                st.ridingCart = null;
+                st.postThrowRamp = 0.5f + (cargoStagger++ & 7) * 0.05f;
             }
 
             if (!st.hasHostState) return;
@@ -974,6 +987,10 @@ namespace RevivalSync
             // last-known state pins every object the player bumps — pure local physics
             // until data flows again
             if (HostStalled) return;
+
+            // the host has this object pooled/deactivated (parked off-map): syncing to it
+            // would fling our copy into the sky and then snap it back, over and over
+            if ((st.hostPos - DisabledPosition()).sqrMagnitude < 25f) return;
 
             if (st.postThrowTimer > 0f)
             {

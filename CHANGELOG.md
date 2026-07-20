@@ -2,6 +2,19 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.12
+
+- Cart cargo rebuilt on the original NetworkingReworked's model (credit: readthisifbad):
+  while a cart is being used, the loot inside it now gets NO network correction at all —
+  it just rides in the basket on local physics, the way it did in the mod that worked.
+  Every version that tried to correct loot mid-haul failed in its own way (rattling,
+  sliding out, fighting the basket). When the haul ends, the load settles back into sync
+  item by item, staggered, so nothing jerks
+- Fixed valuables teleporting around the level: the game parks deactivated objects far
+  above the map, and the mod was syncing toward that parking spot — flinging objects
+  into the sky and snapping them back. One session did this 272 times to the same
+  scenery. Pooled objects are now left alone
+
 # 1.2.11
 
 - Fixed slippery cart loot for real: cargo was being pulled toward where the host has it

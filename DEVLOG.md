@@ -348,3 +348,23 @@ Same rule will apply to any future carrier (conveyors, vehicles, players).
 Also: host sets the PTV teleport flag continuously on some objects (death heads: 3710
 snaps in one session, 1096 at dist<0.05m). Ignore teleport flags when we are already
 within 0.1m - pure spam + needless physics writes.
+
+## 1.2.12 - cargo: stop correcting it (NR was right), and the pooling trap
+
+CART CARGO, SETTLED. Three generations of correction all failed differently:
+  1.2.4  blend toward host       -> rattle/vibration
+  1.2.10 world-space pull        -> shoved loot backwards out of the basket (host cart
+                                    trails by ping, so its cargo does too) = "slippery"
+  1.2.11 cart-frame pull         -> fights the basket own colliders, still annoying
+NR did NONE of it: ApplyPassiveSync skips entirely when (IsItemInCart && CartIsBeingHeld).
+Cargo rides local physics in a local basket with local collisions - the basket holds the
+loot, the network does not have to. Reconcile only when the haul ends (NR:
+SlowSyncCartRoutine, cart first then items staggered 0.02s at 80% duration; ours: correction
+ramp 0.5s + (n&7)*0.05 stagger). RULE: do not network-correct an object that is resting
+inside another simulated object.
+
+POOLING TRAP: AssetManager.physDisabledPosition = (0,3000,0). The game parks deactivated
+objects there and the host STREAMS that position. Blending toward it flings our copy
+skyward -> "beyond snap distance" -> snap back -> repeat (272x on scenery in one session,
+same few decoration valuables). Guard: skip sync when hostPos is within 5m of the parked
+position. Watch for this class: host positions that are not real gameplay positions.
