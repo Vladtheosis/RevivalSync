@@ -319,3 +319,12 @@ loot everywhere -> the desync lived INSIDE the tolerances:
 - Drones: blanket blocklist made CARRIED drones vanilla-laggy (the old shop-item lag).
   Now registered like items; dynamically droneExempt while toggleState on (deployed,
   flies itself) or while magnet-carrying. ItemToggle.toggleState is public.
+
+## OPS GOTCHA - verify the profile DLL version after every deploy
+update-package.ps1 reports "local profile updated" even when the copy is blocked by the
+GAME HOLDING THE DLL LOCK. 1.2.10 sat un-deployed for a full cycle (profile stuck on
+1.2.9) while I thought fixes were live - the user replayed the SAME 1.2.9 session 3x.
+ALWAYS confirm after building while a session may be open:
+  [Diagnostics.FileVersionInfo]::GetVersionInfo("<profile>\Revival-RevivalSync\RevivalSync.dll").ProductVersion
+and cross-check the log's "RevivalSync X.Y.Z loaded" line against the version you expect
+BEFORE diagnosing "it is still broken". Same-version + same-log = not tested yet.
