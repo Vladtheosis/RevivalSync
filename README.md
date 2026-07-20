@@ -10,6 +10,12 @@ One mod that makes R.E.P.O. multiplayer feel like singleplayer — the successor
 merger of) NetworkingRevived and NetworkTweaksRevived, rebuilt on the architecture of the
 original NetworkingReworked with its host-state capture technique.
 
+> **Still experimental.** It should work fine for normal play, but this mod predicts
+> physics locally, so odd behaviour can still show up — an item in the wrong spot, a door
+> disagreeing with the host, loot behaving strangely in a cart. Nothing that breaks a run
+> permanently, and every feature can be switched off individually (see Config). Bug
+> reports with a log attached are genuinely useful.
+
 **Credits:** several core techniques are adopted from **readthisifbad's NetworkingReworked**
 — the raw host-state capture, the fully-local door model with event-level reconciliation,
 and the release-state overwrite that makes throws fly clean. Thank you.

@@ -4,6 +4,11 @@
 
 # 1.2.12
 
+**Still experimental:** this mod predicts physics on your machine, so occasional oddities
+(an item in the wrong spot, a door disagreeing with the host, strange loot behaviour) can
+still happen. It should play fine otherwise, nothing breaks a run permanently, and every
+feature can be switched off individually in the config.
+
 - Cart cargo rebuilt on the original NetworkingReworked's model (credit: readthisifbad):
   while a cart is being used, the loot inside it now gets NO network correction at all —
   it just rides in the basket on local physics, the way it did in the mod that worked.
