@@ -2,6 +2,20 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.15
+
+- Fixed carts syncing position but staying rotated 90 degrees off: the game's own cart
+  logic (stabilization etc.) was running locally for carts nobody here was holding and
+  fought the rotation sync. It now only runs for a cart YOU hold. The stuck-loot
+  teleport backstop also counts rotation now, so a wrongly-angled cart gets rescued
+  like a wrongly-placed one
+- Fixed loot sliding off carts during stop-start pushing: cargo no longer flips between
+  riding-free and synced every time the cart pauses (each flip jostled the load) — it
+  stays riding until the cart has been calm for a moment
+- Loot the host adds to a not-yet-synced cart should no longer press against the outside
+  of the basket: that came from the cart's wrong rotation putting the host's cargo spots
+  outside your basket, fixed above
+
 # 1.2.14
 
 - Held objects now follow NetworkingReworked's rule too: while you're holding something,

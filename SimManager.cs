@@ -51,6 +51,7 @@ namespace RevivalSync
             public int ridingTick;          // == current tick when sitting inside a locally-held cart
             public SimState ridingCart;     // the cart it rides
             public bool wasRiding;          // rode a cart last tick: schedule a gentle staged return
+            public float rideHoldTimer;     // carts: keep marking riders briefly after use ends
             public bool mirrorHeldRot;      // item without local orientation logic: copy host rotation while held
             public ItemGun gun;             // weapons compute their hold orientation locally
             public ItemMelee melee;         // (from their own tuning fields — no network in the loop)
@@ -657,7 +658,20 @@ namespace RevivalSync
                 bool cartInUse = st.localGrab
                     || st.pgo.playerGrabbing.Count > 0
                     || st.rb.velocity.sqrMagnitude > 0.25f;
-                if (!cartInUse) continue;
+                // hysteresis: riding must not flap with stop-start pushing — every
+                // riding<->synced transition jostles the load ("loot slides off")
+                if (cartInUse)
+                {
+                    st.rideHoldTimer = 1.5f;
+                }
+                else if (st.rideHoldTimer > 0f)
+                {
+                    st.rideHoldTimer -= Time.fixedDeltaTime;
+                }
+                else
+                {
+                    continue;
+                }
                 List<PhysGrabObject> items = cartItems(st.cart);
                 if (items == null) continue;
                 for (int i = 0; i < items.Count; i++)
@@ -1070,8 +1084,11 @@ namespace RevivalSync
 
             // convergence backstop: if the blend hasn't brought an object home after five
             // seconds (wedged behind geometry, bad luck), teleport it. The promise is that
-            // loot always ends up where the host sees it.
-            if (dist > 1.5f)
+            // loot always ends up where the host sees it — and "home" includes ROTATION:
+            // a cart in the right spot at the wrong angle is still desynced ("synced but
+            // 90 degrees a different way").
+            float rotErr = Quaternion.Angle(st.rb.rotation, st.hostRot);
+            if (dist > 1.5f || rotErr > 30f)
             {
                 st.farTimer += Time.fixedDeltaTime;
                 if (st.farTimer > 5f && st.noSnapTimer <= 0f && st.postThrowRamp <= 0f)
@@ -1081,7 +1098,7 @@ namespace RevivalSync
                     return;
                 }
             }
-            else if (dist < 0.75f)
+            else if (dist < 0.75f && rotErr < 10f)
             {
                 st.farTimer = 0f;
             }

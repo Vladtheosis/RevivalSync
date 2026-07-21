@@ -280,7 +280,15 @@ namespace RevivalSync.Patches
             PhysGrabObject pgo = self as PhysGrabObject;
             if (pgo == null) pgo = self.GetComponent<PhysGrabObject>();
             if (pgo == null) pgo = self.GetComponentInParent<PhysGrabObject>();
-            return pgo != null && SimManager.HasPhysicsAuthority(pgo);
+            if (pgo == null) return false;
+
+            // cart-specific game logic (steering, stabilization, cart state) may only run
+            // locally while WE hold the cart. Running it for a shadowed cart makes its
+            // local stabilization fight the passive sync's rotation — which is how carts
+            // ended up synced in position but stuck 90 degrees off in rotation.
+            if (self is PhysGrabCart && !SimManager.IsLocalGrab(pgo)) return false;
+
+            return SimManager.HasPhysicsAuthority(pgo);
         }
     }
 

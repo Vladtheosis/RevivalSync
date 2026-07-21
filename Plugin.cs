@@ -14,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.2.14";
+        public const string PluginVersion = "1.2.15";
 
         internal static ManualLogSource Log;
 

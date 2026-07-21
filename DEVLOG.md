@@ -420,3 +420,21 @@ NETWORKTWEAKS VERDICT: the whole "tweaks" half is 3 lines and ZERO patches
 Update=Inf). Keep - free, no conflict surface, prevents random lag-spike kicks.
 Smoothing.cs (325 lines, Hermite for non-simulated objects) is the only optional bulk;
 NR had no equivalent (it replaced PhotonTransformView.Update wholesale instead).
+
+## 1.2.15 - the cart cluster: local cart logic is held-only
+
+Log state: 25 snaps/session (vs 3714 four days ago) - core NR sync is holding. The
+remaining complaints were all cart:
+- 90-degrees-off cart: MasterOrLocallySimulated let PhysGrabCart.FixedUpdate (stabilize/
+  state/steer) run for EVERY registered cart. For a shadowed cart that local logic
+  fights the passive rotation slerp indefinitely; and the backstop measured only
+  DISTANCE, so a right-place-wrong-angle cart was never rescued. Fixes: (a) wrapper
+  returns false for PhysGrabCart contexts unless locally grabbed; (b) backstop triggers
+  on dist>1.5m OR rotErr>30deg (resets <0.75m AND <10deg).
+- Loot slides off: riding condition (velocity threshold) flapped at stop-start; every
+  riding<->synced transition jostled the load. rideHoldTimer 1.5s hysteresis on the
+  CART state keeps riders marked through pauses.
+- Host loads loot into unsynced cart -> sticks OUTSIDE the basket: host cargo spots land
+  outside our misrotated basket; downstream of the rotation fix.
+RULE (generalizes 1.2.12's): run the game's per-object master logic locally ONLY for
+objects the player is actually holding; for shadowed objects it fights the sync.
