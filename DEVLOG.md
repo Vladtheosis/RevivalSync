@@ -514,3 +514,32 @@ IS a behaviour change even when the physics are perfect.
 OPS: do not bulk-edit source with PowerShell (Get-Content|-replace|Set-Content) - PS 5.1
 Get-Content reads UTF-8 as ANSI and the round trip mangles every em dash. Caught it via
 git diff --numstat showing 7 changed lines for a 1-line version bump. Use the Edit tool.
+
+## 1.2.18 - full audit pass
+
+Read every source file end to end (SimManager 1560, Patches 433, Plugin 307,
+Smoothing 361) plus the build/publish scripts. Findings:
+1. CRITICAL (self-inflicted, 1.2.17): ToggleClaimLogPatch and UpgradeCreditLogPatch were
+   written but NEVER added to Plugin.patchTypes. harmony.PatchAll(Type) is called per
+   entry of that array, so both diagnostics were dead code - they would have recorded
+   nothing and the next log would have "proved" the wrong thing. FIXED.
+   RULE: adding a patch class is TWO steps in this codebase - write it, then register it
+   in patchTypes. Grep patchTypes against the [HarmonyPatch] classes after every add.
+2. Diagnostics could throw into game code (SemiFunc.PhotonViewIDPlayerAvatarLocal
+   dereferences PlayerAvatar.instance, null outside gameplay). Both wrapped in try/catch
+   plus an explicit instance null check. A logger must never be able to break a frame.
+3. .github/workflows/publish.yml carried the ORIGINAL Thunderstore description
+   ("[HIGHLY EXPERIMENTAL - expect game-breaking bugs]"), contradicting manifest.json.
+   A tag push would have published that text over the current one. Synced, with a
+   comment tying the two together.
+4. README did not document the F8 emergency resync / Auto Resync Seconds at all. Added.
+Verified clean, no change needed: no token in any tracked file (git grep tss_);
+.gitignore covers bin/obj, LocalPaths.props, *token*, reference/; ScrubStaleLocalGrabber
+correctly SKIPS the handback case (grabber genuinely holding -> g.grabbed &&
+grabbedPhysGrabObject == pgo) so it cannot strip a real grab; Tick iterates tickBuffer
+(a snapshot) so Restore/HardRemove mutating states mid-loop is safe; SweepDead/
+Smoothing.Sweep only ever hold Unity fake-null keys, never real nulls, so Remove cannot
+throw; TransformViewSerializePatch and Smoothing.SerializePatch agree on __runOriginal
+so the stream is never double-consumed; the cart guard in MasterOrLocallySimulated only
+matches PhysGrabCart contexts, leaving PhysGrabObject.FixedUpdate/OverrideTimersTick
+authority intact for shadowed carts as intended.

@@ -2,6 +2,15 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.18
+
+- Full code audit. Fixed: the upgrade diagnostics added in 1.2.17 were never actually
+  switched on, so they recorded nothing (1.2.17's upgrade fix itself was working)
+- Diagnostics can no longer throw errors into the game under any circumstance
+- The Thunderstore release description no longer carries the old "expect game-breaking
+  bugs" wording, which contradicted the current one
+- README now documents the F8 emergency resync
+
 # 1.2.17
 
 - Upgrade orbs are now left completely alone by the mod. R.E.P.O. decides who permanently

@@ -381,11 +381,16 @@ namespace RevivalSync.Patches
         private static void Prefix(ItemToggle __instance, bool toggle, int player)
         {
             if (!Plugin.VerboseLogging.Value || !SimManager.Ready || __instance == null) return;
-            if (__instance.GetComponent<ItemUpgrade>() == null) return;
-            PhysGrabObject pgo = __instance.GetComponent<PhysGrabObject>();
-            Plugin.Log.LogInfo(
-                $"[upgrade] THIS CLIENT is firing toggle={toggle} on {__instance.name}, " +
-                $"crediting photon id {player} — {SimManager.DescribeGrabState(pgo)}");
+            // a diagnostic must never be able to throw into game code
+            try
+            {
+                if (__instance.GetComponent<ItemUpgrade>() == null) return;
+                PhysGrabObject pgo = __instance.GetComponent<PhysGrabObject>();
+                Plugin.Log.LogInfo(
+                    $"[upgrade] THIS CLIENT is firing toggle={toggle} on {__instance.name}, " +
+                    $"crediting photon id {player} — {SimManager.DescribeGrabState(pgo)}");
+            }
+            catch { }
         }
     }
 
@@ -395,14 +400,19 @@ namespace RevivalSync.Patches
         private static void Prefix(ItemUpgrade __instance)
         {
             if (!Plugin.VerboseLogging.Value || !SimManager.Ready || __instance == null) return;
-            ItemToggle toggle = __instance.GetComponent<ItemToggle>();
-            if (toggle == null || SimManager.togglePlayerId == null) return;
+            try
+            {
+                ItemToggle toggle = __instance.GetComponent<ItemToggle>();
+                if (toggle == null || SimManager.togglePlayerId == null) return;
 
-            int credited = SimManager.togglePlayerId(toggle);
-            int local = SemiFunc.PhotonViewIDPlayerAvatarLocal();
-            string who = credited == local ? "THIS PLAYER (us)" : "another player";
-            Plugin.Log.LogInfo(
-                $"[upgrade] {__instance.name} applying to {who} (credited id {credited}, we are {local})");
+                int credited = SimManager.togglePlayerId(toggle);
+                // PlayerAvatar.instance is null outside gameplay — never let that escape
+                int local = PlayerAvatar.instance != null ? SemiFunc.PhotonViewIDPlayerAvatarLocal() : -1;
+                string who = credited == local ? "THIS PLAYER (us)" : "another player";
+                Plugin.Log.LogInfo(
+                    $"[upgrade] {__instance.name} applying to {who} (credited id {credited}, we are {local})");
+            }
+            catch { }
         }
     }
 

@@ -20,7 +20,8 @@ jobs:
         with:
           namespace: Revival # the Thunderstore 'team' to publish under
           name: RevivalSync
-          description: '[HIGHLY EXPERIMENTAL - expect game-breaking bugs] Singleplayer-feel multiplayer for R.E.P.O. Made by Revival.'
+          # keep this identical to manifest.json's description — this is what shows on Thunderstore
+          description: '[Experimental - bugs happen, but plays fine] Replacement for NetworkingReworked. Singleplayer-feel multiplayer for R.E.P.O.: instant carts, doors, items, loot, no timeout kicks. Works with unmodded hosts. Toggle off anything odd. Made by Revival.'
           token: ${{ secrets.TCLI_AUTH_TOKEN }}
           version: ${{ github.ref_name }} # tag name = package version
           community: repo

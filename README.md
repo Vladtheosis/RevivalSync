@@ -32,6 +32,9 @@ and the release-state overwrite that makes throws fly clean. Thank you.
   swing the moment you touch them (the host still decides when they break).
 - **Synced world**: everything you're not holding glides smoothly toward the host's
   authoritative state, so desync cannot accumulate. Wedged/stuck objects snap free.
+- **Emergency resync (F8)**: if something ever ends up in the wrong place, press F8 to
+  teleport every synced object to exactly where the host has it. The key is configurable,
+  and "Auto Resync Seconds" can do it for you on a timer.
 - **Smooth everything else**: enemies and other host-driven objects move with snapshot
   interpolation instead of choppy stepping.
 - **No random timeout kicks**: Photon's client-side disconnect timer is neutralized via

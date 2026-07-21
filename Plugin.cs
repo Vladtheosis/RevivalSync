@@ -14,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.2.17";
+        public const string PluginVersion = "1.2.18";
 
         internal static ManualLogSource Log;
 
@@ -172,6 +172,8 @@ namespace RevivalSync
                 typeof(Patches.TransformViewUpdatePatch),
                 typeof(Patches.TransformViewSerializePatch),
                 typeof(Patches.CartAuthorityPatch),
+                typeof(Patches.ToggleClaimLogPatch),
+                typeof(Patches.UpgradeCreditLogPatch),
             };
             foreach (Type t in patchTypes)
             {
