@@ -2,6 +2,15 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.16
+
+- Fixed upgrades applying to the wrong player: after an upgrade item was knocked out of
+  your hand (e.g. by hitting another player with it), your client could keep believing
+  you were still holding it — and then every E press you made, anywhere on the map,
+  silently used that item in your name. When another player then popped the upgrade, the
+  game credited YOU. The mod now always cleans up its "who is holding this" bookkeeping
+  on every kind of release, with a safety sweep each physics tick
+
 # 1.2.15
 
 - Fixed carts syncing position but staying rotated 90 degrees off: the game's own cart

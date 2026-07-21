@@ -438,3 +438,36 @@ remaining complaints were all cart:
   outside our misrotated basket; downstream of the rotation fix.
 RULE (generalizes 1.2.12's): run the game's per-object master logic locally ONLY for
 objects the player is actually holding; for shadowed objects it fights the sync.
+
+## 1.2.16 - the upgrade thief: stale playerGrabbing entries
+
+Player report: hit someone with an upgrade orb, they use it later (or do anything),
+and the upgrade lands on the REPORTER. Root cause chain (all vanilla facts verified in
+decomp):
+- Upgrades apply to PlayerAvatarGetFromPhotonID(ItemToggle.playerTogglePhotonID); that
+  ID comes from whichever CLIENT fired ToggleItem, and ItemToggle.Update fires it when
+  physGrabObject.heldByLocalPlayer && InputDown(Interact). So attribution is decided by
+  a client-side "am I holding this" flag plus the E key.
+- heldByLocalPlayer is recomputed every FixedUpdate purely from the playerGrabbing
+  list (any entry with photonView.IsMine).
+- Our GrabStartedPatch adds the local grabber to playerGrabbing instantly (and the
+  dedupe patch suppresses the host's add broadcast), but GrabEndedPatch removed it ONLY
+  when IsLocalGrab was still true. An UNSEEN release (orb knocked from hand by hitting
+  a player, tumble, death) makes TickHeld self-heal localGrab=false first; the later
+  GrabEnded then early-returned and the entry was NEVER removed by us.
+- Vanilla's janitor (PhysGrabObject.Update) drops entries only when the grabber's
+  GLOBAL grabbed flag is false - and you are almost always holding SOMETHING - so the
+  stale entry survived. Result: every local E press toggled that orb from anywhere on
+  the map with OUR photon ID; it popped in the other player's hands credited to us.
+  ("They use it and I get it" was actually keyed to OUR E presses - E is pressed while
+  holding an item, which is exactly when the janitor cannot clean.)
+Fix, three layers:
+1. GrabEndedPatch removes our entry UNCONDITIONALLY (before the IsLocalGrab return).
+2. EndLocalGrab calls ScrubStaleLocalGrabber (covers the unseen-release self-heal).
+3. Tick calls the scrub for every non-localGrab state (safety net; genuine grabs have
+   localGrab set synchronously by the GrabStarted postfix, so no false positives).
+Scrub condition: local entry whose grabber is not (grabbed && grabbedPhysGrabObject ==
+this). Verbose log tag: [stale-grab] - its presence in a session log CONFIRMS this
+mechanism fired.
+RULE: any list WE insert into, WE must remove from on every exit path - vanilla
+cleanup loops are written for vanilla insertion patterns and will not cover ours.

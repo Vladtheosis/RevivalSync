@@ -468,9 +468,38 @@ namespace RevivalSync
                 st.lastPacketTime = Time.unscaledTime;
             }
 
+            // covers the unseen-release path (forced drop, knocked out of hand by hitting
+            // a player): GrabEnded never ran, so the entry our grab patch added is still
+            // in playerGrabbing and this object still reads "held by local player"
+            ScrubStaleLocalGrabber(pgo);
+
             if (Plugin.VerboseLogging.Value)
             {
                 Plugin.Log.LogInfo($"Released grab authority: {pgo.name}");
+            }
+        }
+
+        /// <summary>The upgrade-theft guard. A stale LOCAL entry in playerGrabbing makes
+        /// heldByLocalPlayer stick, and ItemToggle.Update then toggles that item on every
+        /// local E press with OUR photon id — upgrades popped in other players' hands and
+        /// the host credited us. The vanilla janitor (PhysGrabObject.Update) only removes
+        /// entries whose grabber's GLOBAL grabbed flag is false, so the stale entry
+        /// survives as long as we are holding anything else. We put the entry there
+        /// (instant grab), so we take it out.</summary>
+        private static void ScrubStaleLocalGrabber(PhysGrabObject pgo)
+        {
+            if (pgo == null) return;
+            List<PhysGrabber> grabbing = pgo.playerGrabbing;
+            for (int i = grabbing.Count - 1; i >= 0; i--)
+            {
+                PhysGrabber g = grabbing[i];
+                if (g == null || !g.isLocal) continue;
+                if (g.grabbed && grabberObject(g) == pgo) continue;
+                grabbing.RemoveAt(i);
+                if (Plugin.VerboseLogging.Value)
+                {
+                    Plugin.Log.LogInfo($"[stale-grab] {pgo.name}: removed stale local grabber entry (object read as held-by-us)");
+                }
             }
         }
 
@@ -740,6 +769,10 @@ namespace RevivalSync
                 }
                 else
                 {
+                    // safety net for any leftover path that strands our instant-grab
+                    // entry — a genuine local grab always has localGrab set by the
+                    // GrabStarted postfix before this tick can run
+                    ScrubStaleLocalGrabber(st.pgo);
                     TickShadow(st);
                 }
             }

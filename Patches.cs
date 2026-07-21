@@ -103,9 +103,14 @@ namespace RevivalSync.Patches
             if (!SimManager.Ready || !SimManager.IsClientInLobby()) return;
             if (player == null || !player.isLocal) return;
             SimManager.ClearHandback(__instance);
+            // ALWAYS drop our instant-grab entry, even when the sim already self-healed
+            // (an unseen release cleared localGrab before this ran) or the object was
+            // handed back mid-hold. A leftover entry keeps heldByLocalPlayer true, and
+            // ItemToggle.Update then fires on OUR E presses with OUR photon id from
+            // anywhere on the map — other players' upgrade orbs popped credited to us.
+            __instance.playerGrabbing.Remove(player);
             if (!SimManager.IsLocalGrab(__instance)) return;
 
-            __instance.playerGrabbing.Remove(player);
             SimManager.LocalThrow(__instance, player);
             SimManager.EndLocalGrab(__instance);
         }
