@@ -543,3 +543,41 @@ throw; TransformViewSerializePatch and Smoothing.SerializePatch agree on __runOr
 so the stream is never double-consumed; the cart guard in MasterOrLocallySimulated only
 matches PhysGrabCart contexts, leaving PhysGrabObject.FixedUpdate/OverrideTimersTick
 authority intact for shadowed carts as intended.
+
+## 1.2.19 - resync key: string instead of KeyCode enum + second audit pass
+
+User: changing the F8 resync key means scrolling a horrible list. Confirmed - their
+config already showed "Resync Loot Key = F4", and REPOConfig renders a ConfigEntry
+<KeyCode> (enum) as a REPOSlider stepping through all ~350 KeyCode names. A
+ConfigEntry<string> renders as a typed REPOInputField instead (verified in the
+decompiled REPOConfig ConfigMenu.cs: string -> CreateREPOInputField, enum ->
+CreateREPOSlider over Enum.GetNames).
+FIX: ResyncKey is now ConfigEntry<string> (default "F8"). Plugin.ResyncKeyCode parses
+it once and caches until the text changes; KeyCode.None disables. ParseKey uses
+Enum.TryParse (case-insensitive, covers every real KeyCode name incl. Mouse0-6,
+Keypad*, F1-24) then a small alias table (spacebar, esc, ctrl, a bare digit -> Alpha#,
+off/disabled -> None). MIGRATION: the old enum serialized as its name ("F4"), which is a
+valid string, so existing bindings survive the type change untouched; BepInEx just
+rewrites the type metadata and drops the acceptable-values list on next launch.
+SELF-BUG caught in review: my first draft aliased "mouse3"/"mouse4"/"mouse5" to
+Mouse2/Mouse3/Mouse4. Those are all valid KeyCode names, so Enum.TryParse matches them
+FIRST - the aliases were unreachable AND remapped the number wrongly (Unity Mouse3 = a
+side button, not middle). Removed; kept only non-enum spellings (middlemouse ->
+Mouse2). RULE: before adding a case-insensitive alias, check it is not already a real
+enum name, or the direct parse silently wins.
+SECOND AUDIT (user "check everything again"): re-verified EVERY reflected member against
+the current decompiled game, not just structure. All present with matching type:
+PhysGrabObject.isMaster/isActive/heldByLocalPlayer/spawned/clientNonKinematic,
+ItemToggle.playerTogglePhotonID, PhysGrabber.grabbedPhysGrabObject, PhysGrabCart.
+itemsInCart/inCart/physGrabObjectGrabArea/isSmallCart, PlayerAvatar.isSprinting,
+PhysGrabHinge.broken, ItemMelee.currentYRotation/usesForceRotation/forwardTilt/
+customTorqueStrength, ItemGun.aimVerticalOffset, ItemDrone.magnetActive/
+magnetTargetPhysGrabObject. CartAuthorityPatch targets exist (PhysGrabObject.FixedUpdate
+line 939 / OverrideTimersTick 574, PhysGrabCart.FixedUpdate 263/CartSteer 313,
+PhysGrabHinge.FixedUpdate 185, PhysGrabObjectGrabArea.Update 87). Override* signatures
+match. ResyncKey was the ONLY enum config entry, so it was the sole scrolling-menu
+offender; all other entries are bool/float (toggles/sliders).
+NOTE (not changed): ItemHealthPack uses the SAME playerTogglePhotonID attribution as
+upgrades, so in theory a contested health pack could heal the racer who grabbed first.
+Left as-is: consumable not permanent, unreported, and exempting it would make health
+packs feel host-laggy in hand. Documented so it is a known quantity, not a surprise.

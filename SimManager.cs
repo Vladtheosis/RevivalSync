@@ -1539,7 +1539,7 @@ namespace RevivalSync
 
             if (SimManager.Ready && SimManager.IsClientInLobby())
             {
-                if (UnityEngine.Input.GetKeyDown(Plugin.ResyncKey.Value))
+                if (Plugin.ResyncKeyCode != KeyCode.None && UnityEngine.Input.GetKeyDown(Plugin.ResyncKeyCode))
                 {
                     SimManager.ResyncAll();
                 }

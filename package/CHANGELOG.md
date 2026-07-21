@@ -2,6 +2,15 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.19
+
+- The Resync Loot Key is now a normal text box in the REPOConfig menu instead of a
+  slider you had to scroll through every key on the keyboard to change. Just type the
+  key name: F8, K, Mouse3, Keypad5, LeftAlt, and so on. Type None to turn it off.
+  Common spellings (space, esc, ctrl, a bare digit like 5) are understood too
+- Second full audit pass: re-verified every game field and method the mod reflects into
+  against the current game version — all correct
+
 # 1.2.18
 
 - Full code audit. Fixed: the upgrade diagnostics added in 1.2.17 were never actually

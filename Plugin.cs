@@ -14,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.2.18";
+        public const string PluginVersion = "1.2.19";
 
         internal static ManualLogSource Log;
 
@@ -37,8 +37,88 @@ namespace RevivalSync
         internal static ConfigEntry<float> TimingThreshold;
         // debugging
         internal static ConfigEntry<bool> VerboseLogging;
-        internal static ConfigEntry<KeyCode> ResyncKey;
+        internal static ConfigEntry<string> ResyncKey;
         internal static ConfigEntry<float> AutoResyncSeconds;
+
+        // ---- Resync key: parsed from the string config, tolerant of casing/aliases ----
+        private static string resyncKeyRaw;
+        private static KeyCode resyncKeyCode = KeyCode.F8;
+
+        /// <summary>The configured resync key, parsed once and cached until the text
+        /// changes. KeyCode.None disables it. Common aliases (space, esc, del, digits,
+        /// "mouse3", "ctrl") are accepted so users don't have to know Unity's exact names.</summary>
+        internal static KeyCode ResyncKeyCode
+        {
+            get
+            {
+                string raw = ResyncKey?.Value;
+                if (raw != resyncKeyRaw)
+                {
+                    resyncKeyRaw = raw;
+                    resyncKeyCode = ParseKey(raw);
+                    Log.LogInfo($"Resync key set to {resyncKeyCode} (from \"{raw}\").");
+                }
+                return resyncKeyCode;
+            }
+        }
+
+        private static KeyCode ParseKey(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return KeyCode.None;
+            string s = raw.Trim();
+
+            // Enum.TryParse handles the exact Unity names (F8, Mouse3, Keypad5, LeftAlt...)
+            // case-insensitively — that covers the large majority of inputs
+            if (Enum.TryParse(s, true, out KeyCode direct) && Enum.IsDefined(typeof(KeyCode), direct))
+            {
+                return direct;
+            }
+
+            // friendly aliases for the names people actually type
+            switch (s.ToLowerInvariant().Replace(" ", ""))
+            {
+                case "none":
+                case "off":
+                case "disabled": return KeyCode.None;
+                case "space":
+                case "spacebar": return KeyCode.Space;
+                case "esc": return KeyCode.Escape;
+                case "enter":
+                case "return": return KeyCode.Return;
+                case "del": return KeyCode.Delete;
+                case "ins": return KeyCode.Insert;
+                case "ctrl":
+                case "control":
+                case "leftctrl":
+                case "lctrl": return KeyCode.LeftControl;
+                case "rightctrl":
+                case "rctrl": return KeyCode.RightControl;
+                case "alt":
+                case "leftalt":
+                case "lalt": return KeyCode.LeftAlt;
+                case "shift":
+                case "leftshift":
+                case "lshift": return KeyCode.LeftShift;
+                // Unity's own names Mouse0..Mouse6 are matched by the direct parse above
+                // (Mouse2 = middle, Mouse3/4 = side buttons). These are just friendlier
+                // spellings for the same buttons.
+                case "middlemouse":
+                case "mousemiddle": return KeyCode.Mouse2;
+                case "rightmouse": return KeyCode.Mouse1;
+                case "leftmouse": return KeyCode.Mouse0;
+            }
+
+            // a single digit types as "5", but the enum name is "Alpha5"
+            if (s.Length == 1 && s[0] >= '0' && s[0] <= '9'
+                && Enum.TryParse("Alpha" + s, out KeyCode digit))
+            {
+                return digit;
+            }
+
+            Log.LogWarning($"Resync key \"{raw}\" is not a recognized key name — resync key disabled. " +
+                           "Try a name like F8, K, Mouse3 or None.");
+            return KeyCode.None;
+        }
 
         /// <summary>
         /// False until the game initializes Photon itself. Touching PhotonNetwork before
@@ -88,9 +168,12 @@ namespace RevivalSync
                 "if an item misbehaves for you. Changes apply from the next level.");
             DisableTimeout = Config.Bind("1. Main", "No Timeout Kicks", true,
                 "Stops the game from kicking you out of the lobby during short lag spikes.");
-            ResyncKey = Config.Bind("1. Main", "Resync Loot Key", KeyCode.F8,
+            // a plain string (not a KeyCode enum): REPOConfig renders enums as a slider
+            // through all ~500 key names, which is unusable. A string gets a typable box.
+            ResyncKey = Config.Bind("1. Main", "Resync Loot Key", "F8",
                 "Emergency desync fix: press this key to instantly teleport every synced " +
-                "object to exactly where the host sees it.");
+                "object to exactly where the host sees it. Type any key name here, for example: " +
+                "F8, K, Mouse3, Keypad5, LeftAlt, Backspace. Set it to None to turn the key off.");
             AutoResyncSeconds = Config.Bind("1. Main", "Auto Resync Seconds", 0f,
                 new ConfigDescription(
                     "0 = off. If set, automatically performs the Resync Loot teleport every " +
