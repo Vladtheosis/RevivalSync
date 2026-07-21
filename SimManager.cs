@@ -116,6 +116,8 @@ namespace RevivalSync
         private static AccessTools.FieldRef<PhysGrabObject, bool> pgoIsMaster;
         private static AccessTools.FieldRef<ItemMelee, Quaternion> meleeYRot;
         private static AccessTools.FieldRef<PhysGrabObject, bool> pgoIsActive;
+        internal static AccessTools.FieldRef<PhysGrabObject, bool> pgoHeldByLocal;
+        internal static AccessTools.FieldRef<ItemToggle, int> togglePlayerId;
         private static AccessTools.FieldRef<PhysGrabber, PhysGrabObject> grabberObject;
         private static AccessTools.FieldRef<PhysGrabCart, List<PhysGrabObject>> cartItems;
         private static AccessTools.FieldRef<PhysGrabCart, Transform> cartInCart;
@@ -149,6 +151,8 @@ namespace RevivalSync
             {
                 pgoIsMaster = AccessTools.FieldRefAccess<PhysGrabObject, bool>("isMaster");
                 pgoIsActive = AccessTools.FieldRefAccess<PhysGrabObject, bool>("isActive");
+                pgoHeldByLocal = AccessTools.FieldRefAccess<PhysGrabObject, bool>("heldByLocalPlayer");
+                togglePlayerId = AccessTools.FieldRefAccess<ItemToggle, int>("playerTogglePhotonID");
                 grabberObject = AccessTools.FieldRefAccess<PhysGrabber, PhysGrabObject>("grabbedPhysGrabObject");
                 cartItems = AccessTools.FieldRefAccess<PhysGrabCart, List<PhysGrabObject>>("itemsInCart");
                 cartInCart = AccessTools.FieldRefAccess<PhysGrabCart, Transform>("inCart");
@@ -259,6 +263,15 @@ namespace RevivalSync
             // but every tool felt host-laggy in hand. We keep its blocklist only for
             // the autonomous class, where it is unambiguously right.)
             if (o.GetComponentInParent<ItemVehicle>() != null) return false;
+            // Upgrade orbs are never simulated, no matter what. REPO decides who PERMANENTLY
+            // receives an upgrade purely client-side: ItemToggle fires on whichever client's
+            // own copy reads heldByLocalPlayer when Interact is pressed, and that client's
+            // player id rides the RPC unchallenged. Our instant grab makes that flag true
+            // locally with no host round trip, so on a contested orb (two players grabbing
+            // at it — exactly what passing one over looks like) the modded client wins the
+            // race and takes the upgrade. Nothing about holding an orb needs instant
+            // physics, so we stay out of it entirely and let vanilla decide.
+            if (o.GetComponentInParent<ItemUpgrade>() != null) return false;
             if (o.GetComponentInParent<ItemAttributes>() != null)
             {
                 foreach (Component c in o.GetComponentsInParent<Component>(true))
@@ -1246,6 +1259,31 @@ namespace RevivalSync
                 if (!stillHeldLocally) handedBackSweep.Add(pgo);
             }
             foreach (PhysGrabObject pgo in handedBackSweep) handedBack.Remove(pgo);
+        }
+
+        /// <summary>Diagnostic: exactly what our copy believes about who holds an object.
+        /// Upgrade attribution hangs on heldByLocalPlayer, so this line in a session log
+        /// settles who claimed an upgrade and why.</summary>
+        internal static string DescribeGrabState(PhysGrabObject pgo)
+        {
+            if (pgo == null) return "(no PhysGrabObject)";
+            var sb = new System.Text.StringBuilder();
+            sb.Append("heldByLocalPlayer=");
+            sb.Append(pgoHeldByLocal != null ? pgoHeldByLocal(pgo).ToString() : "?");
+            sb.Append(" simulated=").Append(states.ContainsKey(pgo));
+            sb.Append(" localGrab=").Append(IsLocalGrab(pgo));
+            sb.Append(" grabbers=[");
+            List<PhysGrabber> grabbing = pgo.playerGrabbing;
+            for (int i = 0; i < grabbing.Count; i++)
+            {
+                PhysGrabber g = grabbing[i];
+                if (i > 0) sb.Append(", ");
+                if (g == null) { sb.Append("null"); continue; }
+                sb.Append(g.isLocal ? "LOCAL" : "remote");
+                sb.Append(grabberObject(g) == pgo ? "(holding)" : "(stale!)");
+            }
+            sb.Append(']');
+            return sb.ToString();
         }
 
         private static PhysGrabber GetLocalGrabber(SimState st)

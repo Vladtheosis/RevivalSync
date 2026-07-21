@@ -2,6 +2,18 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.17
+
+- Upgrade orbs are now left completely alone by the mod. R.E.P.O. decides who permanently
+  gets an upgrade purely on the client side: it goes to whoever's game thinks THEY were
+  holding the orb when Interact was pressed, and the host never checks that claim. The
+  mod's instant grab makes your game believe you're holding something with no wait for
+  the host, so when two players are grabbing at the same orb (exactly what passing one
+  over looks like) your client won that race and took the upgrade. Holding an orb never
+  needed instant physics, so the mod now stays out of it and vanilla decides
+- Added diagnostics for upgrade handling, so if an upgrade still lands on the wrong
+  person the session log records who claimed it and why
+
 # 1.2.16
 
 - Fixed upgrades applying to the wrong player: after an upgrade item was knocked out of

@@ -368,6 +368,45 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
+    /// Upgrade attribution is decided entirely on the client: REPO credits the upgrade to
+    /// whoever's ItemToggle fired, and it fires on any client whose own copy of the item
+    /// reads heldByLocalPlayer when Interact is pressed. The player id rides the RPC
+    /// unchallenged — the host never verifies it. These two logs record the decision from
+    /// both ends (did WE claim it, and who did the credit land on), so a session log can
+    /// prove whether a mis-credited upgrade came from this client or from vanilla.
+    /// </summary>
+    [HarmonyPatch(typeof(ItemToggle), "ToggleItem")]
+    internal static class ToggleClaimLogPatch
+    {
+        private static void Prefix(ItemToggle __instance, bool toggle, int player)
+        {
+            if (!Plugin.VerboseLogging.Value || !SimManager.Ready || __instance == null) return;
+            if (__instance.GetComponent<ItemUpgrade>() == null) return;
+            PhysGrabObject pgo = __instance.GetComponent<PhysGrabObject>();
+            Plugin.Log.LogInfo(
+                $"[upgrade] THIS CLIENT is firing toggle={toggle} on {__instance.name}, " +
+                $"crediting photon id {player} — {SimManager.DescribeGrabState(pgo)}");
+        }
+    }
+
+    [HarmonyPatch(typeof(ItemUpgrade), "PlayerUpgrade")]
+    internal static class UpgradeCreditLogPatch
+    {
+        private static void Prefix(ItemUpgrade __instance)
+        {
+            if (!Plugin.VerboseLogging.Value || !SimManager.Ready || __instance == null) return;
+            ItemToggle toggle = __instance.GetComponent<ItemToggle>();
+            if (toggle == null || SimManager.togglePlayerId == null) return;
+
+            int credited = SimManager.togglePlayerId(toggle);
+            int local = SemiFunc.PhotonViewIDPlayerAvatarLocal();
+            string who = credited == local ? "THIS PLAYER (us)" : "another player";
+            Plugin.Log.LogInfo(
+                $"[upgrade] {__instance.name} applying to {who} (credited id {credited}, we are {local})");
+        }
+    }
+
+    /// <summary>
     /// Fires when the game (or Photon itself) creates its network dispatcher —
     /// the earliest safe moment to touch PhotonNetwork.
     /// </summary>

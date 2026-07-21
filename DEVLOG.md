@@ -471,3 +471,46 @@ this). Verbose log tag: [stale-grab] - its presence in a session log CONFIRMS th
 mechanism fired.
 RULE: any list WE insert into, WE must remove from on every exit path - vanilla
 cleanup loops are written for vanilla insertion patterns and will not cover ours.
+
+## 1.2.17 - upgrade attribution: stay out of it (1.2.16 was the wrong call)
+
+User pushback on 1.2.16: "that was not what was happening bro i kept holding it".
+They were right. Evidence gathered AFTER shipping 1.2.16 (do this first next time):
+- Grab/release counts on Item Upgrade* across all 10 archived sessions: perfectly
+  balanced (0/0, 1/1, 8/8, 7/7, 11/11, 24/24, 2/2, 23/23), zero handbacks. NOTE: this
+  is NOT proof on its own - EndLocalGrab logs "Released grab authority" on the unseen-
+  release self-heal path too, so balanced counts cannot rule a stale entry in or out.
+- The real killer for the 1.2.16 theory: a stale local entry is SELF-CORRECTING.
+  Vanilla GrabEndedRPC runs on the master, and if the master's list contains us it
+  broadcasts GrabPlayerRemoveRPC to All - which cleans our local list within one round
+  trip. We never suppress that RPC (dedupe only patches GrabPlayerAddRPC). So a
+  PERSISTENT stale entry is close to impossible. 1.2.16 is defensible hygiene, not
+  the bug. Keep it, do not claim it fixes upgrades.
+ACTUAL MECHANISM (vanilla, verified in decomp):
+- ItemToggle.Update fires on ANY client where physGrabObject.heldByLocalPlayer is true
+  and Interact goes down. It sends ToggleItemRPC(toggle, SemiFunc.PhotonViewIDPlayer
+  AvatarLocal()) to ALL. ToggleItemRPC has NO MasterOnlyRPC guard.
+- ToggleItemLogic stores that id in playerTogglePhotonID; ItemUpgrade.PlayerUpgrade and
+  every ItemUpgrade* subclass resolve the recipient from it
+  (PunManager.Upgrade*(PlayerGetSteamID(PlayerAvatarGetFromPhotonID(id)))). PunManager's
+  Upgrade* methods are plain local mutations of statsManager dictionaries - no master
+  gate anywhere. Whoever's client fires FIRST owns the upgrade, permanently.
+- heldByLocalPlayer is recomputed each PhysGrabObject.FixedUpdate from playerGrabbing
+  (any entry with photonView.IsMine). Checked: no master-gated early return precedes
+  that block, so our FixedUpdate transpile does NOT corrupt it.
+- OUR effect: the instant-grab patch sets that flag with ZERO host round trip, while an
+  unmodded player must wait for master GrabStartedRPC -> GrabPlayerAddRPC. On a
+  CONTESTED orb (two players grabbing at it - exactly what handing one over looks like)
+  the modded client wins the race every time and takes the upgrade.
+FIX: CanSimulate returns false for ItemUpgrade (GetComponentInParent). Orbs are held at
+the face via OverrideGrabDistance(0.5f) and need no instant physics, so there is nothing
+to lose. Attribution reverts to pure vanilla.
+DIAGNOSTICS added (verbose): [upgrade] on ItemToggle.ToggleItem (this client is claiming
+it + SimManager.DescribeGrabState) and on ItemUpgrade.PlayerUpgrade (who the credit
+landed on). If it recurs with these silent on our side, it is vanilla, not us.
+RULE: never take local authority over an object whose game logic assigns PERMANENT,
+attributable rewards from a client-side "who is holding this" check. Latency advantage
+IS a behaviour change even when the physics are perfect.
+OPS: do not bulk-edit source with PowerShell (Get-Content|-replace|Set-Content) - PS 5.1
+Get-Content reads UTF-8 as ANSI and the round trip mangles every em dash. Caught it via
+git diff --numstat showing 7 changed lines for a 1-line version bump. Use the Edit tool.
