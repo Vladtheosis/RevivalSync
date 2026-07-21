@@ -789,25 +789,18 @@ namespace RevivalSync
                 return;
             }
 
-            // The host's copy ALWAYS trails us by (speed x lag) while we drag — that trail is
-            // normal and must not be "corrected", or the correction acts as a permanent brake.
-            // Allow a velocity-proportional trail and compare against a velocity-led host
-            // position; only true divergence gets corrected. Stale packets mean the host's
-            // copy is at rest — never lead by stale velocities.
+            // HELD OBJECTS — NetworkingReworked's rule: while you are holding something it
+            // is yours completely, and the network does not touch it. Its passive sync
+            // simply skipped anything locally grabbed. Everything we added on top of that
+            // misfired in real lobbies: the drift nudge fought the natural ping-trail and
+            // became a brake (the "ultra slow cart"), and the wedge-snap mistook a paused
+            // cart's normal trail for a stuck object and teleported it out of your hands.
+            // Both are gone. What remains is one genuine last resort — if the host's copy
+            // is hopelessly far away for over a second, it is snagged on something and
+            // holding on achieves nothing, so give it back.
             float speed = st.rb.velocity.magnitude;
-            float lagAllowance = speed * 0.4f;
-            bool heldHostIdle = Time.unscaledTime - st.lastPacketTime > 0.35f;
-            Vector3 ledHostPos = heldHostIdle ? st.hostPos : st.hostPos + st.hostVel * 0.15f;
-
-            float correctAt = (st.cart != null
-                ? Plugin.HeldDriftCorrectAt.Value * 0.4f
-                : Plugin.HeldDriftCorrectAt.Value) + lagAllowance;
-
-            float drift = Vector3.Distance(st.rb.position, ledHostPos);
-            // carts get extra headroom: busy 4-player lobbies legitimately run multi-meter
-            // trails at sprint, and yanking a held cart back to the host reads as
-            // "it disappeared out of my hand"
-            float handbackAt = Plugin.HeldDriftHandbackAt.Value + lagAllowance;
+            float drift = Vector3.Distance(st.rb.position, st.hostPos);
+            float handbackAt = Plugin.HeldDriftHandbackAt.Value + speed * 0.4f;
             if (st.cart != null) handbackAt *= 1.5f;
             if (drift > handbackAt)
             {
@@ -822,35 +815,7 @@ namespace RevivalSync
             {
                 st.desyncTimer = 0f;
             }
-
-            // wedged on geometry while the host's copy (which follows our hand) is elsewhere:
-            // lerping just grinds against the wall, so snap it free to where the host has it
-            // NEVER wedge-snap a held cart (velocity-driven — it converges by itself, and
-            // teleporting it out of the player's hands is the worst possible outcome),
-            // and demand real conviction for everything else: busy lobbies legitimately
-            // pause with 2m+ trails, which is drift, not wedging
-            if (st.cart == null && drift > 2.5f && speed < 0.5f)
-            {
-                st.stuckTimer += Time.fixedDeltaTime;
-                if (st.stuckTimer > 1.5f)
-                {
-                    st.stuckTimer = 0f;
-                    Snap(st, "held object wedged in geometry, freeing to host position");
-                    return;
-                }
-            }
-            else
-            {
-                st.stuckTimer = 0f;
-            }
-
-            if (drift > correctAt)
-            {
-                // acceleration-style nudge instead of a raw position write: it composes
-                // with the cart drive and renders smoothly through rigidbody interpolation
-                st.rb.velocity += Vector3.ClampMagnitude(ledHostPos - st.rb.position, 3f)
-                                  * (2.5f * Time.fixedDeltaTime);
-            }
+            st.stuckTimer = 0f;
 
             // gadgets without local orientation logic: the host runs their straightening
             // scripts on our behalf. To make the tool STAY straight we do what the game's

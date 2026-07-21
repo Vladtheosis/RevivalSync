@@ -2,6 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.14
+
+- Held objects now follow NetworkingReworked's rule too: while you're holding something,
+  the network doesn't touch it at all. The drift correction (which fought the normal
+  ping-trail and acted as a brake — the old "ultra slow cart") and the wedge-snap (which
+  mistook a paused cart's trail for a stuck object and teleported it out of your hands)
+  are both gone. One safety remains: if the host's copy is hopelessly far away for over a
+  second it's snagged on something, so control returns to the host
+- Removed the now-meaningless "Held Object Correct At" setting
+
 # 1.2.13
 
 - Loot syncing rebuilt on the original NetworkingReworked's code (credit: readthisifbad).

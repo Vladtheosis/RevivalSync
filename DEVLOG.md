@@ -391,3 +391,32 @@ KEPT deliberately (not in NR, earned here): pooled/parked-object guard (y=3000),
 HostStalled guard, hostKinematic follow, hinge system, throw grace + ramp, cargo riding,
 snap distance, 5s convergence backstop, F8 ResyncAll.
 RULE GOING FORWARD: if a fix requires the sync target to move, it is the wrong fix.
+
+## 1.2.14 - held objects go NR-simple too; full NR audit
+
+NR held rule: ApplyPassiveSync is skipped entirely when locally grabbed. NO corrections.
+Ours had a drift nudge (fought the natural ping-trail = the "ultra slow cart" brake) and
+a wedge-snap (mistook a paused cart trail for stuck = "cart teleported out of my hand").
+Both removed. Kept ONE last resort: ForceHandback when drift > HandbackAt for >0.6s
+(1.2s carts) - NR had nothing, but without it a snagged host copy leaves you holding a
+ghost forever. Config "Held Object Correct At" deleted (dead).
+
+### AUDIT: where we are vs NR, and why we do NOT copy the rest
+ALREADY NR (verbatim or equivalent): passive sync (1.2.13), cargo rule (1.2.12), held
+rule (1.2.14), release state-overwrite, door local-logic model, cart transpilers,
+OverrideTimersTick transpile, autonomous-object blocking.
+DELIBERATELY NOT NR - copying these would REGRESS the mod on the current game:
+ - Capture: NR used fixed offsets (data.Length==15, offset 7). THE GAME UPDATE CHANGED
+   THE PAYLOAD - this is precisely why NR is dead. Ours pattern-scans and survives.
+ - Hinge impulse RPCs: NR had CLIENTS broadcast OpenImpulseRPC/CloseImpulseRPC to All.
+   Modern equivalents are SemiFunc.MasterOnlyRPC-guarded; a client broadcast is rejected
+   and is exactly the shape the security update targets.
+ - PhotonView.IsMine postfix -> true: flips RPC targeting and serialization DIRECTION,
+   not just physics authority. Ours flips PhysGrabObject.isMaster + targeted transpiles.
+ - DelayedRelease beam replay (skip GrabEnded, replay beam state, client-dispatched
+   GrabEndedRPC/PhysGrabBeamDeactivateRPC): same RPC-shape risk.
+NETWORKTWEAKS VERDICT: the whole "tweaks" half is 3 lines and ZERO patches
+(DisconnectTimeout=3600000, SentCountAllowance=10000, MinimalTimeScaleToDispatchInFixed
+Update=Inf). Keep - free, no conflict surface, prevents random lag-spike kicks.
+Smoothing.cs (325 lines, Hermite for non-simulated objects) is the only optional bulk;
+NR had no equivalent (it replaced PhotonTransformView.Update wholesale instead).

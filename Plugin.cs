@@ -14,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.2.13";
+        public const string PluginVersion = "1.2.14";
 
         internal static ManualLogSource Log;
 
@@ -26,7 +26,6 @@ namespace RevivalSync
         internal static ConfigEntry<float> PassiveSyncStrength;
         internal static ConfigEntry<float> PostThrowGrace;
         internal static ConfigEntry<float> SnapDistance;
-        internal static ConfigEntry<float> HeldDriftCorrectAt;
         internal static ConfigEntry<float> HeldDriftHandbackAt;
         // network tweaks
         internal static ConfigEntry<bool> DisableTimeout;
@@ -117,11 +116,6 @@ namespace RevivalSync
                     "If an object ends up further than this many meters from where the host has it, " +
                     "it teleports there instead of gliding.",
                     new AcceptableValueRange<float>(2f, 30f)));
-            HeldDriftCorrectAt = Config.Bind(tuning, "Held Object Correct At", 1.5f,
-                new ConfigDescription(
-                    "While you hold something: how many meters (beyond the normal ping-trail) it may " +
-                    "drift from the host's copy before being gently pulled back.",
-                    new AcceptableValueRange<float>(0.5f, 10f)));
             HeldDriftHandbackAt = Config.Bind(tuning, "Held Object Give Up At", 4f,
                 new ConfigDescription(
                     "While you hold something: if it stays further off than this many meters (e.g. the " +
