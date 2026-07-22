@@ -2,6 +2,20 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.20
+
+- Cart fixes, from reading a real session log. Two causes:
+  - The "Teleport Distance" setting can no longer be set dangerously low (minimum is
+    now 4m, default stays 6m). A cart you steer naturally rides up to ~3m from where
+    the host has it; with the distance set below that, the cart teleports constantly —
+    which is what made carts feel weak on stairs (yanked back down), fling their loot,
+    and clip through you. If yours was set low it will move up to 4m on next launch;
+    6 is recommended.
+  - RevivalSync now warns if CartSpeedSync is installed. RevivalSync steers carts
+    locally on its own now, and CartSpeedSync steers the same cart on top of that
+    (doubling the turn rate and boosting sprint speed), so the two fight. Remove
+    CartSpeedSync, or turn off "Instant Carts" if you prefer to keep it.
+
 # 1.2.19
 
 - The Resync Loot Key is now a normal text box in the REPOConfig menu instead of a

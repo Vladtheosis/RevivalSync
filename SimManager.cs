@@ -1508,6 +1508,22 @@ namespace RevivalSync
                                               "please uninstall/disable the old mod.");
                     }
                 }
+
+                // CartSpeedSync postfixes PhysGrabCart.CartSteer to re-drive the cart's
+                // velocity and doubles its turn-rate clamp (8 vs vanilla's 4). Vanilla only
+                // ran CartSteer on the host, so on a client that mod did nothing — but
+                // RevivalSync now runs CartSteer LOCALLY for the cart you hold, so its
+                // postfix fires on top of ours every tick. Two steering systems on one cart
+                // is the erratic / weak / loot-flinging feel. We already give carts instant
+                // local response, so it is redundant here as well as conflicting.
+                if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("discjenny.CartSpeedSync"))
+                {
+                    Plugin.Log.LogWarning("CartSpeedSync is installed. RevivalSync now steers carts locally on its " +
+                        "own, and CartSpeedSync steers the same cart on top of that (it doubles the turn rate and " +
+                        "boosts speed while sprinting) — the two fight, which can make a held cart feel weak, " +
+                        "whip around, or fling its loot. Remove CartSpeedSync, or turn OFF 'Instant Carts' in " +
+                        "RevivalSync's config if you would rather keep it.");
+                }
             }
 
             // catches objects that existed before we joined (late join, level already loaded)

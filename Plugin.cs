@@ -14,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.2.19";
+        public const string PluginVersion = "1.2.20";
 
         internal static ManualLogSource Log;
 
@@ -197,8 +197,10 @@ namespace RevivalSync
             SnapDistance = Config.Bind(tuning, "Teleport Distance", 6f,
                 new ConfigDescription(
                     "If an object ends up further than this many meters from where the host has it, " +
-                    "it teleports there instead of gliding.",
-                    new AcceptableValueRange<float>(2f, 30f)));
+                    "it teleports there instead of gliding. Do NOT set this low: a cart you are steering " +
+                    "naturally rides up to ~3m from the host's copy, so a low value makes it teleport " +
+                    "constantly — through you and scattering its loot. 6 is the sweet spot.",
+                    new AcceptableValueRange<float>(4f, 30f)));
             HeldDriftHandbackAt = Config.Bind(tuning, "Held Object Give Up At", 4f,
                 new ConfigDescription(
                     "While you hold something: if it stays further off than this many meters (e.g. the " +

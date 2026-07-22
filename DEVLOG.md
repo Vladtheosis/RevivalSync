@@ -581,3 +581,51 @@ NOTE (not changed): ItemHealthPack uses the SAME playerTogglePhotonID attributio
 upgrades, so in theory a contested health pack could heal the racer who grabbed first.
 Left as-is: consumable not permanent, unreported, and exempting it would make health
 packs feel host-laggy in hand. Documented so it is a known quantity, not a surprise.
+
+## 1.2.20 - the cart trio: it was a config footgun + a mod conflict, not new code
+
+User (on 1.2.19): "cant go up stairs, cart is weak when I hold it + loot sticks to the
+side + sometimes I go through the cart and break everything." Read session-20260722-
+121639.log (1.2.19 confirmed loaded, 0 errors). ROOT CAUSES, both external:
+
+1. TELEPORT DISTANCE SET TO 2.8m (config footgun). The user had lowered "Teleport
+   Distance" (SnapDistance) from the 6m default to 2.8m in some past desync-fighting
+   session. But the log shows a HELD cart naturally drifts up to 2.8m from the host's
+   copy (avg 0.6m, max 2.8m) because we run cart steering locally while the host steers
+   its own copy from network-delayed input - they diverge. So the cart sat right on the
+   teleport threshold. Every brief unheld moment (the log had 61 grab/release cycles -
+   the grab beam flickers on stair geometry) dropped it into TickShadow, saw dist>2.8,
+   and Snapped it to the host copy. On stairs the host copy is lower/behind -> the cart
+   yanks back down = "weak, cant go up." Next to the player -> teleports through them and
+   scatters loot = "go through the cart and break everything" + "loot sticks to the
+   side." One setting, all three symptoms.
+   FIX: raised the AcceptableValueRange floor for Teleport Distance from 2f to 4f and
+   rewrote the description to warn that low = constant cart teleporting. BepInEx clamps
+   the user's 2.8 -> 4 on next launch; recommended 6 in the response.
+   LESSON: a held cart's ~3m local-vs-host drift is INHERENT to local steering (do not
+   try to tether it - that whole class of fix failed in 1.2.11-1.2.14). So any snap/
+   teleport threshold below ~4m is self-inflicted thrash. The floor must sit above the
+   natural drift band.
+
+2. CARTSPEEDSYNC 2.0.0 (discjenny.CartSpeedSync) INSTALLED. It is a Postfix on
+   PhysGrabCart.CartSteer that re-drives cart velocity when the lead grabber is sprinting
+   and clamps angular velocity to 8 (vanilla clamps to 4 - it DOUBLES the turn rate) and
+   pushes cart speed up to the player's raw horizontal speed. Vanilla only ran CartSteer
+   on the host, so on a client CartSpeedSync's postfix never fired. RevivalSync's
+   CartAuthorityPatch now makes CartSteer run LOCALLY for the held cart, so its postfix
+   fires locally on top of our steering every tick -> two steering systems on one cart ->
+   erratic/whippy/loot-flinging. Also partly redundant (we already give instant local
+   cart response). FIX: added a tailored conflict warning (not in the generic replace
+   list - it is a specific CartSteer-postfix conflict; message offers remove-it OR turn
+   off Instant Carts).
+CONFIG ORPHAN NOTE: the user's .cfg still carries dead keys from pre-1.2.14 sections
+(SnapDistance=4.4, PassiveSyncStrength=0.111, "Held Object Correct At"=1.5). These are
+NOT read - current binds use the human section names ("Teleport Distance", "World Sync
+Strength"). Confirmed active values by matching current Config.Bind keys: Teleport
+Distance=2.8, World Sync Strength=0.072, Throw Freedom Seconds=1.25. Do not be fooled by
+the lowercase orphans when reading a user config.
+VERIFIED (ruled out as causes): ObjectsInCart() runs on the client (called from Update,
+no master gate) so itemsInCart IS populated - cargo riding-marking works. Held cart grab
+is healthy (61 grabs / 61 releases, balanced). Only 1 cart snap all session. The 177
+snaps in the log were guns/melee/valuables (host-teleport spam on death heads etc.), not
+the cart - a red herring for this report.
