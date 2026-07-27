@@ -2,6 +2,21 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.21
+
+- **Loot no longer pops out of the cart and sticks to the side.** The real cause: loot
+  riding in a cart is deliberately left alone by the network (correcting it individually
+  is what used to make it rattle) — but the cart itself was still being corrected, and
+  those corrections move it instantly, straight through anything in the way. So when
+  someone else pushed the cart, your copy of the basket slid out from under its own
+  load and left it wedged against the outside. The cart now carries its cargo through
+  every correction, so the load stays in the basket.
+- **The cart cannon and cart laser no longer go limp in the cart.** They are held upright
+  and aimed by host-only logic that a client never runs, so the only thing keeping one
+  standing was the host's streamed rotation — which the cargo rule above was
+  (correctly) withholding. They now use the game's normal sync, like drones and
+  vehicles, so they stay upright without spamming the resync key.
+
 # 1.2.20
 
 - Cart fixes, from reading a real session log. Two causes:

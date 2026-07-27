@@ -629,3 +629,49 @@ no master gate) so itemsInCart IS populated - cargo riding-marking works. Held c
 is healthy (61 grabs / 61 releases, balanced). Only 1 cart snap all session. The 177
 snaps in the log were guns/melee/valuables (host-teleport spam on death heads etc.), not
 the cart - a red herring for this report.
+
+## 1.2.21 - cargo rides WITH the cart; cart turrets are host-driven
+
+Evidence: a third-party bug report with a clean log (Downloads/log.txt) - RevivalSync
+1.2.20, only MenuLib + REPOConfig alongside it, NO CartSpeedSync. 0 mod errors, 14 snaps,
+58/58 balanced grabs, 0 handbacks, 0 resyncs. So the cart-cargo bug reproduces in a clean
+environment and is OURS, not the 1.2.20 conflict, and it happens with NO snap involved.
+
+BUG 1 - "loot goes out of the cart and gets stuck on the side" (chronic since 1.2.10;
+every previous attempt attacked the wrong half of it).
+MECHANISM (finally correct): the NR cargo rule gives objects riding in a cart NO sync -
+right, and not the problem. The problem is the CART is still corrected while they are not,
+and our corrections are direct `rb.position` writes, which are teleports: they ignore
+colliders entirely. So when another player pushes the cart, our basket is lerped (or
+snapped, metres) toward the host pose while the cargo sits in pure local physics - the
+cart passes THROUGH its own load and leaves it outside, wedged on the outer wall. Nothing
+"pushes" the loot out; the basket moves out from under it.
+FIX: CarryCargo(). TickShadow is now a thin wrapper that, for carts only, records pose
+before/after TickShadowInner and applies that exact rigid transform (deltaPos +
+deltaRot about the cart pivot) to every registered item in cartItems(). Skips riders that
+are locally grabbed, drone-exempt, kinematic, or inactive.
+WHY THIS ONE IS DIFFERENT from the 1.2.10-1.2.12 failures: those all gave cargo its own
+moving sync TARGET (world pull, then cart-frame pull) and fought the basket colliders ->
+rattle/slippery. This gives cargo no target at all - it just carries them with their
+container, which is what a basket physically does. It also covers snaps for free: a cart
+that teleports now takes its loot with it instead of leaving a pile behind.
+
+BUG 2 - "laser and cannon go limp in the cart, like no battery pips, only fixed by
+spamming the resync key" (new report).
+MECHANISM: ItemCartCannon and ItemCartLaser BOTH sit on ItemCartCannonMain. Everything
+that holds a turret upright and aims it is master-gated - CorrectorAndLightLogic()
+instantiates the "GreatCorrector" parented to the cart and sets rotationTargetY, all
+inside `if (SemiFunc.IsMasterClientOrSingleplayer() && impactDetector.currentCart)`. A
+client runs NONE of it, so the only thing standing a turret up is the host's streamed
+rotation. Put it in a cart -> our cargo rule withholds exactly that -> it flops. The
+resync key hard-syncs it upright for an instant, hence "only fixed by pressing reset
+continuously" - a perfect fingerprint for "this object has no local logic AND no sync".
+FIX: CanSimulate exempts ItemCartCannonMain (covers cannon + laser). Same class as
+ItemVehicle/drones/duck: host-driven pose, so vanilla PhotonTransformView + Smoothing
+own it. Tradeoff accepted: carrying a turret by hand feels host-laggy, same as a drone.
+RULE (generalizes 1.2.15 and this): before simulating an object, ask what keeps it in its
+pose. If the answer is master-only game logic, a client has nothing to reproduce it with -
+it MUST keep vanilla sync. Withholding sync is only safe for objects whose pose is
+maintained by plain physics.
+NOTE: the reporter's "Q:" was literally "Question:", not the Q key - they asked when
+movement becomes smooth generally. Do not go hunting for a rotate-key bug.

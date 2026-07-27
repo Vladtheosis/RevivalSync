@@ -263,6 +263,15 @@ namespace RevivalSync
             // but every tool felt host-laggy in hand. We keep its blocklist only for
             // the autonomous class, where it is unambiguously right.)
             if (o.GetComponentInParent<ItemVehicle>() != null) return false;
+            // Cart turrets (the cart cannon and cart laser both live on ItemCartCannonMain)
+            // are held upright and aimed by MASTER-ONLY logic — the "GreatCorrector" it
+            // parents to the cart, plus rotationTargetY. A client runs none of that, so the
+            // only thing keeping a turret standing is the host's streamed rotation. Our
+            // cargo rule deliberately gives anything riding in a cart NO sync, so the turret
+            // had nothing holding it up and flopped over ("goes limp like the battery is
+            // dead"), recoverable only by spamming the resync key. Host-driven, exactly like
+            // drones and vehicles: leave it on the game's normal sync.
+            if (o.GetComponentInParent<ItemCartCannonMain>() != null) return false;
             // Upgrade orbs are never simulated, no matter what. REPO decides who PERMANENTLY
             // receives an upgrade purely client-side: ItemToggle fires on whichever client's
             // own copy reads heldByLocalPlayer when Interact is pressed, and that client's
@@ -974,8 +983,63 @@ namespace RevivalSync
         }
 
         /// <summary>Nobody local holds this object: run it in local physics, but blend it
-        /// continuously toward the host's streamed state so desync can never accumulate.</summary>
+        /// continuously toward the host's streamed state so desync can never accumulate.
+        /// For a cart, every correction is carried through to its cargo (see CarryCargo).</summary>
         private static void TickShadow(SimState st)
+        {
+            if (st.cart == null)
+            {
+                TickShadowInner(st);
+                return;
+            }
+            Vector3 cartPosBefore = st.rb.position;
+            Quaternion cartRotBefore = st.rb.rotation;
+            TickShadowInner(st);
+            CarryCargo(st, cartPosBefore, cartRotBefore);
+        }
+
+        /// <summary>
+        /// A basket and its contents move together — so when the network moves the basket,
+        /// it has to move the contents too.
+        ///
+        /// This is the "loot pops out and sticks to the side of the cart" bug. Cargo riding
+        /// in a cart is deliberately given NO sync (NetworkingReworked's rule — correcting it
+        /// individually is what made loot rattle). But the CART itself is still corrected, and
+        /// those corrections are direct rb.position writes, which teleport straight through
+        /// colliders. So whenever someone else pushes the cart, our copy of the basket slides
+        /// — sometimes metres, on a snap — while the loot is pinned in local physics: the cart
+        /// passes THROUGH its own cargo and leaves it outside, wedged against the outer wall.
+        ///
+        /// Applying the cart's exact movement to everything in it keeps the load in the basket
+        /// without giving cargo a sync target of its own (which is the thing that rattles).
+        /// </summary>
+        private static void CarryCargo(SimState cartState, Vector3 oldPos, Quaternion oldRot)
+        {
+            if (cartState.cart == null || cartState.rb == null) return;
+
+            Vector3 newPos = cartState.rb.position;
+            Quaternion newRot = cartState.rb.rotation;
+            Vector3 deltaPos = newPos - oldPos;
+            if (deltaPos.sqrMagnitude < 1e-8f && Quaternion.Angle(oldRot, newRot) < 0.01f) return;
+            Quaternion deltaRot = newRot * Quaternion.Inverse(oldRot);
+
+            List<PhysGrabObject> items = cartItems(cartState.cart);
+            if (items == null) return;
+            for (int i = 0; i < items.Count; i++)
+            {
+                PhysGrabObject item = items[i];
+                if (item == null || !states.TryGetValue(item, out SimState rider)) continue;
+                if (rider == cartState || rider.rb == null) continue;
+                // a player is holding it, or the host owns it outright — not ours to move
+                if (rider.localGrab || rider.droneExempt || rider.rb.isKinematic) continue;
+                if (!pgoIsActive(item)) continue;
+
+                rider.rb.position = newPos + deltaRot * (rider.rb.position - oldPos);
+                rider.rb.rotation = deltaRot * rider.rb.rotation;
+            }
+        }
+
+        private static void TickShadowInner(SimState st)
         {
             pgoIsMaster(st.pgo) = false;
 
