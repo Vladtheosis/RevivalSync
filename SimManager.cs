@@ -1030,6 +1030,12 @@ namespace RevivalSync
                 PhysGrabObject item = items[i];
                 if (item == null || !states.TryGetValue(item, out SimState rider)) continue;
                 if (rider == cartState || rider.rb == null) continue;
+                // ONLY carry cargo we are deliberately not syncing this tick. Cargo that is
+                // running its own correction does not need the ride, and giving it both would
+                // move it twice per tick — the cart's delta shoving it off its own target and
+                // its own lerp dragging it back, which is precisely the rattle the riding rule
+                // exists to prevent. Parked-cart cargo converges on its own.
+                if (rider.ridingTick != tickCounter) continue;
                 // a player is holding it, or the host owns it outright — not ours to move
                 if (rider.localGrab || rider.droneExempt || rider.rb.isKinematic) continue;
                 if (!pgoIsActive(item)) continue;
@@ -1194,9 +1200,8 @@ namespace RevivalSync
 
             // convergence backstop: if the blend hasn't brought an object home after five
             // seconds (wedged behind geometry, bad luck), teleport it. The promise is that
-            // loot always ends up where the host sees it — and "home" includes ROTATION:
-            // a cart in the right spot at the wrong angle is still desynced ("synced but
-            // 90 degrees a different way").
+            // loot always ends up where the host sees it.
+            //
             // ROTATION counts as "desynced" for CARTS ONLY. 1.2.15 added it for the
             // right reason (a cart parked in the correct spot but turned 90 degrees is
             // genuinely wrong) but applied it to everything, and that was a bad trade for

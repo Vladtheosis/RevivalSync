@@ -718,3 +718,44 @@ HOST-AUTHORITATIVE - our client-side physics, snaps included, cannot directly da
 valuable. What a client CAN do is diverge, and then the host's own copy hits something we
 never see -> "damaged for no reason". Bug 1 made that materially worse (we were teleporting
 loot on a 5s timer), so retest before theorising further.
+
+## 1.2.23 - third full audit
+
+Read every source file again, this time hunting logic bugs in the code changed across
+1.2.21-1.2.22 rather than re-checking structure. One real finding, fixed; everything else
+verified sound.
+
+FINDING (fixed) - CarryCargo double-moved non-riding cargo. As shipped in 1.2.21 it
+applied the cart's correction delta to EVERY registered item in cartItems(). But cargo is
+only left unsynced while it is RIDING (cart in use, plus the 1.5s rideHoldTimer). Once the
+cart parks and that expires, cargo resumes its own passive lerp - and CarryCargo was still
+shoving it by the cart's delta on the same tick. Two corrections per tick pulling different
+ways: the carry pushes it off its own target, its own lerp drags it back. That is exactly
+the tug-of-war the riding rule exists to avoid, i.e. a fresh source of basket rattle.
+FIX: `if (rider.ridingTick != tickCounter) continue;` - carry only what we are deliberately
+not syncing. Parked-cart cargo converges on its own and needs no ride; a parked cart that
+snaps also self-corrects because its cargo is chasing its own host positions anyway.
+NOTE: this refines UNTESTED code (1.2.21's CarryCargo never reached a playtest - log2.txt
+was 1.2.21 but predates the cargo retest). Reasoned, not measured. If basket behaviour is
+still wrong, this restriction is the first thing to re-examine.
+
+VERIFIED SOUND, no change needed:
+- Patch registration: all 14 [HarmonyPatch] classes in Patches.cs appear in
+  Plugin.patchTypes; SerializeReadCapturePatch is the deliberate exception, applied lazily
+  by EnsureCapturePatch once Photon exists. (This is the 1.2.17 bug class - check it every
+  audit; the check is a two-list diff and takes seconds.)
+- CarryCargo ordering is index-independent: riders are marked in the pre-pass before the
+  main loop, so whether a rider is ticked before or after its cart, the riding branch does
+  nothing and only the carry moves it.
+- CarryCargo destroyed-object safety: `item == null` catches Unity fake-null before any
+  FieldRef touches it; `cartState.cart == null` likewise. No throw path into the tick loop.
+- hostKinematic branch uses MovePosition, which does NOT update rb.position synchronously,
+  so the carry delta reads ~0 there. Not a bug (no false movement), just no carry on that
+  path - documented so it is not "rediscovered" as one.
+- Smoothing owner change (1.2.22) cannot touch your own body: the postfix returns on
+  stream.IsWriting, and PUN never echoes your own serialization back to you. Remote only.
+- Rotation backstop now computes rotErr only when rotationCounts (carts) - no wasted
+  Quaternion.Angle per object per tick, and the 0.75m/10deg reset arm is guarded the same way.
+- Version consistency: Plugin.cs / csproj / manifest.json / CHANGELOG top entry all agree.
+  manifest description 246 chars (limit 250) and publish.yml description matches it exactly
+  (the 1.2.18 drift is still closed).

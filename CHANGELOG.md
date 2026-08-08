@@ -2,6 +2,14 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.23
+
+- Audit fix: the "cart carries its cargo" behaviour added in 1.2.21 now applies only to
+  loot the mod is deliberately leaving alone. Loot that is running its own correction
+  was being moved twice in the same instant — once with the cart, once by its own
+  correction pulling it back — which is exactly the tug-of-war that used to make loot
+  rattle in the basket. Parked-cart loot settles on its own and no longer gets the ride.
+
 # 1.2.22
 
 - **Fixed objects teleporting for no reason (a bug introduced in 1.2.15).** The safety
