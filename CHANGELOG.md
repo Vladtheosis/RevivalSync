@@ -2,6 +2,22 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.22
+
+- **Fixed objects teleporting for no reason (a bug introduced in 1.2.15).** The safety
+  net that rescues a stuck object was also counting *rotation*, which was meant for
+  carts — a cart parked in the right spot but turned 90 degrees really is desynced. But
+  it applied to everything, and a mug or a weapon resting at a slightly different angle
+  than the host sees is completely normal. So ordinary loot that was already in the
+  right place got teleported every few seconds: one session logged 52 of these on
+  objects sitting 0.1–1.3m from where the host had them (before 1.2.15: zero). That is
+  what made items pop through shelves, jump out of your hands, and land somewhere odd.
+  Rotation now only counts for carts, which is what it was written for.
+- **Other players' tumbles (the Q roll) are now smoothed.** A player's body is streamed
+  by that player, not by the host, and the smoothing only ever accepted data from the
+  host — so tumbling players were the one thing on screen that never got smoothed and
+  stepped at the raw network rate. Your own body is unaffected.
+
 # 1.2.21
 
 - **Loot no longer pops out of the cart and sticks to the side.** The real cause: loot

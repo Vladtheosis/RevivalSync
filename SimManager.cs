@@ -1197,8 +1197,17 @@ namespace RevivalSync
             // loot always ends up where the host sees it — and "home" includes ROTATION:
             // a cart in the right spot at the wrong angle is still desynced ("synced but
             // 90 degrees a different way").
-            float rotErr = Quaternion.Angle(st.rb.rotation, st.hostRot);
-            if (dist > 1.5f || rotErr > 30f)
+            // ROTATION counts as "desynced" for CARTS ONLY. 1.2.15 added it for the
+            // right reason (a cart parked in the correct spot but turned 90 degrees is
+            // genuinely wrong) but applied it to everything, and that was a bad trade for
+            // loose props: a mug or a weapon resting at a different angle than the host's
+            // copy is normal settling, and teleporting it is far worse than the
+            // disagreement. It fired constantly on objects that were ALREADY in the right
+            // place — one session logged 52 of these at distances of 0.1-1.3m (vs zero
+            // before 1.2.15), popping loot through shelves and out of players' hands.
+            bool rotationCounts = st.cart != null;
+            float rotErr = rotationCounts ? Quaternion.Angle(st.rb.rotation, st.hostRot) : 0f;
+            if (dist > 1.5f || (rotationCounts && rotErr > 30f))
             {
                 st.farTimer += Time.fixedDeltaTime;
                 if (st.farTimer > 5f && st.noSnapTimer <= 0f && st.postThrowRamp <= 0f)
@@ -1208,7 +1217,7 @@ namespace RevivalSync
                     return;
                 }
             }
-            else if (dist < 0.75f && rotErr < 10f)
+            else if (dist < 0.75f && (!rotationCounts || rotErr < 10f))
             {
                 st.farTimer = 0f;
             }

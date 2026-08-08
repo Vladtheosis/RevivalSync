@@ -675,3 +675,46 @@ it MUST keep vanilla sync. Withholding sync is only safe for objects whose pose 
 maintained by plain physics.
 NOTE: the reporter's "Q:" was literally "Question:", not the Q key - they asked when
 movement becomes smooth generally. Do not go hunting for a rotate-key bug.
+
+## 1.2.22 - the 1.2.15 rotation backstop was teleporting everything; tumbles never smoothed
+
+Evidence: reporter log2.txt (1.2.21, clean 3-mod profile, 0 errors, 46/46 balanced grabs,
+0 handbacks, 0 resyncs) - 13 snaps, and 7 of them are VALUABLES snapped at dist=0.1, 0.2,
+0.3, 0.6, 0.8, 1.1, 1.3m. Those are objects already in the right place, so the DISTANCE
+arm of the backstop cannot have fired - it was the rotation arm.
+Confirmed by before/after across our own sessions:
+  1.2.14 (pre-rotation-backstop): 25 snaps,  0 close-range "stuck away" snaps
+  1.2.19 (post):                 177 snaps, 52 close-range "stuck away" snaps
+7x more snapping, and a whole class of snap that did not exist before.
+
+BUG 1 - REGRESSION I SHIPPED IN 1.2.15. The rotation-aware backstop (dist > 1.5 || rotErr
+> 30, sustained 5s -> Snap) was written for ONE symptom: a cart parked in the right spot
+but turned 90 degrees. Correct for carts. Applied to every object it is actively harmful -
+a mug/weapon/prop resting at a different angle than the host's copy is NORMAL settling
+(objects come to rest differently on different machines and never converge), so rotErr
+sits above 30 forever and the object is teleported every 5 seconds forever. That is the
+"items pop through shelves / jump out of my hand / land somewhere weird" class.
+FIX: rotationCounts = st.cart != null. Rotation only arms the backstop for carts (and is
+not even computed otherwise). Distance arm unchanged for everything.
+LESSON: when a fix is derived from ONE object type's failure, scope it to that type. The
+1.2.15 entry even says "the cart cluster" and I still applied it globally.
+
+BUG 2 - tumbling players (Q key) never smoothed. Q is InputKey.Tumble, default
+"<Keyboard>/q" (InputManager.cs:191) - the reporter's "jump on Q" is the ragdoll roll, NOT
+"Question:" as read last session. Smoothing.SerializePatch had
+`if (info.Sender != PhotonNetwork.MasterClient) return;`. That is right for physics props
+(host-owned) but a PLAYER's body is owned by that player and streamed directly from them,
+so their tumble never entered the snapshot buffer -> UpdatePatch bailed on
+snapshots.Count == 0 -> raw ~10Hz stepping while everything around it glided.
+FIX: cache the PhotonView in InterpState; accept the stream from master OR from
+view.Owner. Own body is inherently unaffected (we return on stream.IsWriting, and PUN
+never echoes your own serialization back to you), so this only touches REMOTE players.
+
+VALUE LOSS ("ring lost value", "thrown thing hit god knows what and got damaged") -
+INVESTIGATED, NOT FIXED, do not guess at it again without a video:
+PhysGrabObjectImpactDetector.BreakRPC is wrapped in SemiFunc.MasterOnlyRPC, and
+DestroyObject() early-returns unless IsMasterClientOrSingleplayer. So value loss is
+HOST-AUTHORITATIVE - our client-side physics, snaps included, cannot directly damage a
+valuable. What a client CAN do is diverge, and then the host's own copy hits something we
+never see -> "damaged for no reason". Bug 1 made that materially worse (we were teleporting
+loot on a 5s timer), so retest before theorising further.

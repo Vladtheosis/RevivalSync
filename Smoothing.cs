@@ -29,6 +29,7 @@ namespace RevivalSync
             internal Rigidbody rb;
             internal Transform tf;
             internal PhysGrabHinge hinge;
+            internal PhotonView view;   // whoever owns it is the authority for its transform
             internal readonly LinkedList<Snapshot> snapshots = new LinkedList<Snapshot>();
             internal Snapshot prev;
             internal float interpStartTime = -1f;
@@ -106,6 +107,7 @@ namespace RevivalSync
                     rb = ptv.GetComponent<Rigidbody>(),
                     tf = ptv.transform,
                     hinge = ptv.GetComponent<PhysGrabHinge>(),
+                    view = ptv.GetComponent<PhotonView>(),
                     smoothFreq = BaseFrequency(),
                 };
                 states[ptv] = st;
@@ -148,9 +150,21 @@ namespace RevivalSync
                 // if another patch skipped the original, the fields are stale — record nothing
                 if (!__runOriginal || stream.IsWriting) return;
                 if (!ShouldSmooth(__instance)) return;
-                if (info.Sender != PhotonNetwork.MasterClient) return;
 
                 InterpState st = GetOrCreate(__instance);
+                // Accept the stream from whoever OWNS this view, not only from the host.
+                // Physics props are host-owned, but a PLAYER's body is owned by that
+                // player and streamed straight from them — most visibly the ragdoll you
+                // become when you press Q (tumble). Requiring the master here meant those
+                // were never smoothed at all: they stepped at the raw ~10Hz packet rate
+                // while everything around them glided, which is the "Q jump isn't smooth"
+                // report. (Your OWN body is never affected — we only ever smooth data we
+                // RECEIVE, and you don't receive your own.)
+                if (info.Sender != PhotonNetwork.MasterClient
+                    && (st.view == null || info.Sender != st.view.Owner))
+                {
+                    return;
+                }
                 int timestamp = info.SentServerTimestamp;
                 if (st.haveFirst && timestamp == st.lastTimestamp) return;
 
