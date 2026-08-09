@@ -759,3 +759,33 @@ VERIFIED SOUND, no change needed:
 - Version consistency: Plugin.cs / csproj / manifest.json / CHANGELOG top entry all agree.
   manifest description 246 chars (limit 250) and publish.yml description matches it exactly
   (the 1.2.18 drift is still closed).
+
+## 2026-07-25 - physics coverage audit (documentation only, no code change)
+
+Swept every networked physics class in the game against what the mod actually does.
+Full writeup lives in docs/PHYSICS-COVERAGE.md - READ THAT before adding anything new to
+the simulation, and before treating a "desync" report as a sync bug (several behaviours
+in it are by design). Headlines:
+
+1. LATENT BUG CLASS, unconfirmed: ~30 self-propelled valuables/items apply their own
+   motion inside a master gate (confirmed by reading ValuablePlane:115, WizardBroom:80,
+   ValuableCubeBall:43/63/84 - gate, then all their forces). Same shape as the cart cannon.
+   It can only bite where the mod WITHHOLDS host data, which is exactly two places:
+   TickHeld (held objects get no network correction) and riding cargo. Predicted symptom:
+   hold a flying broom/plane and it goes dead in your hands while others see it fly.
+   If confirmed, fix with the DRONE pattern (exempt only while active), never a blanket
+   exemption - blanket would make all of them feel host-laggy in hand for nothing.
+   ItemGun/ItemMelee show up in the scan but are already solved via local orientation
+   (1.1.8/1.2.0) and need no change.
+2. PLAYER SIDE: every player action is a host round trip and none of it is predicted -
+   both directions of Q (tumble AND standing back up), tumble force/torque, climb end,
+   falling state. Tumble wings are split: visuals local, LIFT FORCE master-only
+   (ItemUpgradePlayerTumbleWingsLogic:227 gate before the forces at 244/250/254), which is
+   why wings look instant but feel floaty.
+   DECISION: leave it alone. Mispredicting a prop makes a prop jump; mispredicting the
+   PLAYER rubber-bands their own body and camera. The host can also refuse a tumble
+   (stun, tumbleOverride, disabled input), so it needs a rollback path. If ever built:
+   the two Q presses first, behind a config switch, wings second.
+3. CORRECTION TO CARRY FORWARD: tumble launch is NOT fixed and never was. The only
+   tumble change ever shipped is 1.2.22, which smooths OTHER players' tumbling bodies
+   (visual, Smoothing.cs). Do not tell users their own Q delay is addressed.
