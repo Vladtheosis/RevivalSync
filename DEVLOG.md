@@ -860,3 +860,10 @@ ruled out. NetworkConnect reparents the password page and the cursor out of the 
 hierarchy; REPO Fidelity's ultrawide mode then shifts its buttons ~130px while its mouse
 remap patch failed to load (ambiguous UIMousePosToUIPos). Top suspect; user to test with
 REPO Fidelity off.
+1.3.0 CONFIRMED in a real lobby (2026-10-29, client, asia region): 13/13 patches, 38 objects
+registered, host packets +40..+460 per 10s, held cart drift 0.0-0.6m, zero RevivalSync errors.
+User: "working flawlessly". That session ran RevivalSync ALONE - the user had turned the rest
+off. The prior session's 18,485 errors were ALL REPOConfig 1.2.6 (MenuPageMain.Start hook NRE ->
+MenuPageMain.Update NRE every frame) - REPOConfig/MenuLib/REPO Fidelity are broken on v0.5.0.
+Benign log pattern: [stale-grab] right after a sub-0.2s grab/release on a cart = the host's
+late GrabPlayerAddRPC re-adding us after we already let go; the scrub cleans it (1.2.16).
