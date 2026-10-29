@@ -17,8 +17,13 @@ architecture, including its host-state capture technique.
 > permanently, and every feature can be switched off individually (see Config). Bug
 > reports with a log attached are genuinely useful.
 
+**Game version:** 1.3.0 and newer are for R.E.P.O. **v0.5.0+**. The game rewrote its object
+sync in v0.5.0, so older RevivalSync versions switch themselves off on it (and 1.3.0 switches
+itself off on older game versions). If the game updates and breaks something again, the mod
+detects it at startup and turns itself off rather than misbehaving.
+
 **Credits:** several core techniques are adopted from **readthisifbad's NetworkingReworked**
-— the raw host-state capture, the fully-local door model with event-level reconciliation,
+— the host-state capture design, the fully-local door model with event-level reconciliation,
 and the release-state overwrite that makes throws fly clean. Thank you.
 
 ## What it does (client-side only — works with unmodded hosts)

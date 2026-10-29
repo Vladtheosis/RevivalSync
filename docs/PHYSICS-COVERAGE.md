@@ -129,5 +129,25 @@ needs a clean rollback path. If it is ever built: start with the two Q presses b
 own config switch, wings second.
 
 **NOTE:** nothing about tumble is fixed today. The only tumble-related change ever shipped
-is 1.2.22, which smooths *other players'* tumbling bodies (a visual fix in `Smoothing.cs`).
-Your own Q delay is untouched.
+was 1.2.22, which smoothed *other players'* tumbling bodies (a visual fix in `Smoothing.cs`).
+Since game v0.5.0 the transform view drops every packet not sent by the host before decoding
+it, so that owner-streamed data no longer exists and 1.3.0 removed the rule. Your own Q
+delay was never touched.
+
+---
+
+## 6. Game v0.5.0 networking (what the 1.3.0 port is built on)
+
+- `PhotonTransformView` sends ONE packed `byte[]` per object (`SemiNetPackedStream`): flags,
+  teleport revision, velocity, spin, position, rotation; reduced precision unless needed.
+- The client decode ignores non-host senders and drops a packet identical to the last one
+  (`SemiNetPackedStream.ReceiveChanged`). `lastReceiveTimestamp` only moves when a packet is
+  actually applied — that is how RevivalSync tells fresh host state from a repeat.
+- Host teleports bump `teleportRevision`. The view's own `teleport` flag is ALSO set when the
+  local copy is 5m+ off, which is not a teleport.
+- Interest throttling: objects nobody is near (and not grabbed, not discovered valuables, not
+  enemies or players) send only a 2s heartbeat. Per-object silence means nothing; host
+  liveness is judged from ANY host serialization (`SerializeReadCapturePatch`).
+- RevivalSync reads host state from the game's own decode, and a transpiler filters the
+  decode's rigidbody writes (kinematic, velocity, sleep/wake; first-packet placement only for
+  held objects) for objects it simulates.

@@ -69,7 +69,6 @@ namespace RevivalSync
 
         private static readonly Dictionary<PhysGrabObject, SimState> states = new Dictionary<PhysGrabObject, SimState>();
         private static readonly Dictionary<PhotonTransformView, SimState> byPtv = new Dictionary<PhotonTransformView, SimState>();
-        private static readonly Dictionary<int, SimState> byViewId = new Dictionary<int, SimState>();
         private static readonly List<SimState> tickBuffer = new List<SimState>(256);
 
         // objects we handed back to the host mid-hold; no local grab authority until re-grabbed
@@ -128,7 +127,6 @@ namespace RevivalSync
 
         private static AccessTools.FieldRef<PhotonTransformView, Vector3> ptvNetPos;
         private static AccessTools.FieldRef<PhotonTransformView, Quaternion> ptvNetRot;
-        private static AccessTools.FieldRef<PhotonTransformView, Vector3> ptvStoredPos;
         private static AccessTools.FieldRef<PhotonTransformView, Vector3> ptvSmoothedPos;
         private static AccessTools.FieldRef<PhotonTransformView, Quaternion> ptvSmoothedRot;
         private static AccessTools.FieldRef<PhotonTransformView, Vector3> ptvRecvPos;
@@ -142,8 +140,12 @@ namespace RevivalSync
         private static AccessTools.FieldRef<PhotonTransformView, bool> ptvFirstTake;
         private static AccessTools.FieldRef<PhotonTransformView, bool> ptvTeleport;
         private static AccessTools.FieldRef<PhotonTransformView, bool> ptvIsSleeping;
-        private static AccessTools.FieldRef<PhotonTransformView, bool> ptvKinForced;
         private static AccessTools.FieldRef<PhotonTransformView, float> ptvKinForcedTimer;
+        // v0.5.0: the host's kinematic flag, its teleport counter, and the server time of the
+        // last packet the view actually applied (changes only when a NEW packet was decoded)
+        private static AccessTools.FieldRef<PhotonTransformView, bool> ptvKinematic;
+        private static AccessTools.FieldRef<PhotonTransformView, ushort> ptvTeleportRev;
+        internal static AccessTools.FieldRef<PhotonTransformView, int> ptvLastReceiveStamp;
 
         internal static bool InitAccessors()
         {
@@ -164,7 +166,6 @@ namespace RevivalSync
 
                 ptvNetPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("m_NetworkPosition");
                 ptvNetRot = AccessTools.FieldRefAccess<PhotonTransformView, Quaternion>("m_NetworkRotation");
-                ptvStoredPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("m_StoredPosition");
                 ptvSmoothedPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("smoothedPosition");
                 ptvSmoothedRot = AccessTools.FieldRefAccess<PhotonTransformView, Quaternion>("smoothedRotation");
                 ptvRecvPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("receivedPosition");
@@ -178,8 +179,10 @@ namespace RevivalSync
                 ptvFirstTake = AccessTools.FieldRefAccess<PhotonTransformView, bool>("m_firstTake");
                 ptvTeleport = AccessTools.FieldRefAccess<PhotonTransformView, bool>("teleport");
                 ptvIsSleeping = AccessTools.FieldRefAccess<PhotonTransformView, bool>("isSleeping");
-                ptvKinForced = AccessTools.FieldRefAccess<PhotonTransformView, bool>("kinematicClientForced");
                 ptvKinForcedTimer = AccessTools.FieldRefAccess<PhotonTransformView, float>("kinematicClientForcedTimer");
+                ptvKinematic = AccessTools.FieldRefAccess<PhotonTransformView, bool>("isKinematic");
+                ptvTeleportRev = AccessTools.FieldRefAccess<PhotonTransformView, ushort>("receivedTeleportRevision");
+                ptvLastReceiveStamp = AccessTools.FieldRefAccess<PhotonTransformView, int>("lastReceiveTimestamp");
 
                 if (pgoThrow == null)
                 {
@@ -205,11 +208,6 @@ namespace RevivalSync
         }
 
         internal static bool IsSuppressed(PhotonTransformView ptv)
-        {
-            return ptv != null && byPtv.TryGetValue(ptv, out SimState st) && !st.droneExempt;
-        }
-
-        internal static bool IsRegistered(PhotonTransformView ptv)
         {
             return ptv != null && byPtv.TryGetValue(ptv, out SimState st) && !st.droneExempt;
         }
@@ -298,47 +296,77 @@ namespace RevivalSync
             return true;
         }
 
-        // ---- host state capture (fed by the OnSerializeRead patch) ----
+        // ---- host state capture (fed by the transform view's own decode) ----
 
-        internal static SimState GetByViewId(int viewId)
+        /// <summary>Any serialization from the host counts as "the host is alive". Per-object
+        /// silence means nothing since v0.5.0: resting objects only send when they change,
+        /// and objects far from every camera drop to a 2s heartbeat.</summary>
+        internal static void NoteHostTraffic()
         {
-            return byViewId.TryGetValue(viewId, out SimState st) ? st : null;
+            lastCaptureTime = Time.unscaledTime;
+        }
+
+        /// <summary>The view's receive bookkeeping right before the game decoded a host packet
+        /// into it — so EndHostRead can tell whether a NEW packet was actually applied.</summary>
+        internal struct HostRead
+        {
+            public SimState st;
+            public int stamp;
+            public bool firstTake;
+            public ushort teleportRev;
+        }
+
+        /// <summary>The simulated object whose host packet the game is decoding right now.
+        /// While set, the decode's writes to that rigidbody are filtered (HostReadFilter).</summary>
+        internal static SimState activeRead;
+
+        internal static bool BeginHostRead(PhotonTransformView ptv, out HostRead read)
+        {
+            read = default;
+            if (ptv == null || !byPtv.TryGetValue(ptv, out SimState st) || st.rb == null) return false;
+            read.st = st;
+            read.stamp = ptvLastReceiveStamp(ptv);
+            read.firstTake = ptvFirstTake(ptv);
+            read.teleportRev = ptvTeleportRev(ptv);
+            // a flying drone is on vanilla sync (dynamic exemption): let the decode drive it
+            activeRead = st.droneExempt ? null : st;
+            return true;
         }
 
         /// <summary>
-        /// Scans a raw serialization event payload for the transform view's data pattern
-        /// (isSleeping, teleport, isKinematic, velocity, angularVelocity, position, direction,
-        /// rotation) and caches it. Component data starts at index 3; the exact offset within
-        /// the array depends on the prefab's observed-component order, so we scan for it.
-        /// Delta-compressed packets with unchanged (null) slots simply don't match — which is
-        /// fine, unchanged means our cache is already correct.
+        /// Since v0.5.0 the host's state arrives as ONE packed byte[] per object. Rather than
+        /// re-implementing that format (and breaking on the next tweak), the game decodes it
+        /// for us and we copy the result. The decode's writes to the rigidbody itself are
+        /// filtered out while it runs (see TransformViewSerializePatch's transpiler).
         /// </summary>
-        internal static void CacheHostState(SimState st, object[] data, int networkTime)
+        internal static void EndHostRead(PhotonTransformView ptv, in HostRead read)
         {
-            for (int i = 3; i + 7 < data.Length; i++)
+            SimState st = read.st;
+            if (st == null) return;
+
+            bool firstTakeNow = ptvFirstTake(ptv);
+            bool applied = (read.firstTake && !firstTakeNow) || ptvLastReceiveStamp(ptv) != read.stamp;
+            if (applied)
             {
-                if (data[i] is bool sleeping && data[i + 1] is bool teleport && data[i + 2] is bool kinematic
-                    && data[i + 3] is Vector3 vel && data[i + 4] is Vector3 angVel
-                    && data[i + 5] is Vector3 pos && data[i + 6] is Vector3 dir
-                    && data[i + 7] is Quaternion rot)
+                // NR stored the streamed position as-is. Extrapolating by clock lag makes the
+                // blend target jump around between packets, which every "vibrating / jittery"
+                // report has traced back to. Keep it exactly where the host said it was.
+                st.hostPos = ptvNetPos(ptv);
+                st.hostRot = ptvNetRot(ptv);
+                st.hostVel = ptvRecvVel(ptv);
+                st.hostAngVel = ptvRecvAngVel(ptv);
+                st.hostSleeping = ptvIsSleeping(ptv);
+                st.hostKinematic = ptvKinematic(ptv);
+                // a host teleport bumps the revision; the view's own teleport flag is ALSO set
+                // whenever our copy is 5m+ from the host's, which is not a teleport at all
+                if (!read.firstTake && ptvTeleportRev(ptv) != read.teleportRev)
                 {
-                    st.hostSleeping = sleeping;
-                    st.hostTeleport |= teleport;
-                    st.hostKinematic = kinematic;
-                    st.hostVel = vel;
-                    st.hostAngVel = angVel;
-                    // NR stored the streamed position as-is (it read the direction slot and
-                    // ignored it). Extrapolating by clock lag makes the blend target jump
-                    // around between packets, which every "vibrating / jittery" report has
-                    // traced back to. Keep it exactly where the host said it was.
-                    st.hostPos = pos;
-                    st.hostRot = rot;
-                    st.hasHostState = true;
-                    st.lastPacketTime = Time.unscaledTime;
-                    lastCaptureTime = Time.unscaledTime;
-                    PacketsCaptured++;
-                    return;
+                    st.hostTeleport = true;
                 }
+                ptvTeleport(ptv) = false;
+                st.hasHostState = true;
+                st.lastPacketTime = Time.unscaledTime;
+                PacketsCaptured++;
             }
         }
 
@@ -419,7 +447,6 @@ namespace RevivalSync
 
             states[pgo] = st;
             byPtv[ptv] = st;
-            if (st.viewId != 0) byViewId[st.viewId] = st;
             if (Plugin.VerboseLogging.Value)
             {
                 Plugin.Log.LogInfo($"[reg] {pgo.name} (view {st.viewId}, cart={st.cart != null}, seeded={st.hasHostState})");
@@ -612,11 +639,7 @@ namespace RevivalSync
             // replicate the tail of PhotonTransformView.Update that we skip while suppressed
             if (ptvKinForcedTimer(ptv) > 0f)
             {
-                ptvKinForcedTimer(ptv) -= Time.deltaTime;
-                if (ptvKinForcedTimer(ptv) <= 0f)
-                {
-                    ptvKinForced(ptv) = false;
-                }
+                ptvKinForcedTimer(ptv) = Mathf.Max(0f, ptvKinForcedTimer(ptv) - Time.deltaTime);
             }
         }
 
@@ -749,7 +772,6 @@ namespace RevivalSync
                     if (view != null && view.ViewID != 0)
                     {
                         st.viewId = view.ViewID;
-                        byViewId[st.viewId] = st;
                     }
                 }
 
@@ -1418,7 +1440,6 @@ namespace RevivalSync
 
                     ptvNetPos(st.ptv) = targetPos;
                     ptvNetRot(st.ptv) = targetRot;
-                    ptvStoredPos(st.ptv) = targetPos;
                     ptvRecvPos(st.ptv) = targetPos;
                     ptvRecvRot(st.ptv) = targetRot;
                     ptvPrevPos(st.ptv) = targetPos;
@@ -1449,7 +1470,6 @@ namespace RevivalSync
         {
             if (st.pgo != null) states.Remove(st.pgo);
             if (st.ptv != null) byPtv.Remove(st.ptv);
-            if (st.viewId != 0) byViewId.Remove(st.viewId);
 
             // dictionaries can hold destroyed-object keys; sweep those out
             if (st.pgo == null || st.ptv == null)
@@ -1460,13 +1480,11 @@ namespace RevivalSync
 
         private static readonly List<PhysGrabObject> deadPgos = new List<PhysGrabObject>();
         private static readonly List<PhotonTransformView> deadPtvs = new List<PhotonTransformView>();
-        private static readonly List<int> deadIds = new List<int>();
 
         private static void SweepDead()
         {
             deadPgos.Clear();
             deadPtvs.Clear();
-            deadIds.Clear();
             foreach (KeyValuePair<PhysGrabObject, SimState> kv in states)
             {
                 if (kv.Key == null) deadPgos.Add(kv.Key);
@@ -1475,13 +1493,8 @@ namespace RevivalSync
             {
                 if (kv.Key == null) deadPtvs.Add(kv.Key);
             }
-            foreach (KeyValuePair<int, SimState> kv in byViewId)
-            {
-                if (kv.Value.pgo == null) deadIds.Add(kv.Key);
-            }
             foreach (PhysGrabObject k in deadPgos) states.Remove(k);
             foreach (PhotonTransformView k in deadPtvs) byPtv.Remove(k);
-            foreach (int k in deadIds) byViewId.Remove(k);
         }
 
         internal static void RestoreAll()
@@ -1498,7 +1511,6 @@ namespace RevivalSync
             }
             states.Clear();
             byPtv.Clear();
-            byViewId.Clear();
             handedBack.Clear();
         }
 
@@ -1610,12 +1622,12 @@ namespace RevivalSync
                 nextRegisterSweep = Time.unscaledTime + 5f;
                 if (SimManager.Ready && SimManager.IsClientInLobby())
                 {
-                    foreach (PhysGrabObject pgo in UnityEngine.Object.FindObjectsOfType<PhysGrabObject>())
+                    foreach (PhysGrabObject pgo in UnityEngine.Object.FindObjectsByType<PhysGrabObject>(FindObjectsSortMode.None))
                     {
                         SimManager.TryRegister(pgo);
                     }
                     SimManager.EnsureDroneAccessors();
-                    SimManager.cachedDrones = UnityEngine.Object.FindObjectsOfType<ItemDrone>();
+                    SimManager.cachedDrones = UnityEngine.Object.FindObjectsByType<ItemDrone>(FindObjectsSortMode.None);
                 }
             }
 

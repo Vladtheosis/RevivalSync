@@ -24,9 +24,11 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
-    /// Captures the host's object states from the raw serialization events — the same
-    /// low-level capture the original NetworkingReworked used. Immune to observed-component
-    /// order, other mods' patches on PhotonTransformView, and per-component read failures.
+    /// Host heartbeat: every serialization event the host sends, for ANY object, proves
+    /// it is alive. Until v0.5.0 this was also where host states were scraped out of the
+    /// raw payload (NetworkingReworked's capture), but the payload is now one packed
+    /// byte[] per object — states are read from the game's own decode instead
+    /// (TransformViewSerializePatch).
     /// </summary>
     [HarmonyPatch]
     internal static class SerializeReadCapturePatch
@@ -36,23 +38,10 @@ namespace RevivalSync.Patches
             return AccessTools.Method(typeof(PhotonNetwork), "OnSerializeRead");
         }
 
-        private static void Prefix(object[] data, Player sender, int networkTime)
+        private static void Prefix(Player sender)
         {
-            if (!SimManager.Ready || data == null || data.Length < 4) return;
-            if (PhotonNetwork.IsMasterClient) return;
-            if (sender == null || sender != PhotonNetwork.MasterClient) return;
-            if (!(data[0] is int viewId)) return;
-
-            SimManager.SimState st = SimManager.GetByViewId(viewId);
-            if (st == null) return;
-            try
-            {
-                SimManager.CacheHostState(st, data, networkTime);
-            }
-            catch (Exception e)
-            {
-                if (Plugin.VerboseLogging.Value) Plugin.Log.LogWarning($"Capture failed for view {viewId}: {e.Message}");
-            }
+            if (!SimManager.Ready || PhotonNetwork.IsMasterClient) return;
+            if (sender != null && sender == PhotonNetwork.MasterClient) SimManager.NoteHostTraffic();
         }
     }
 
@@ -117,27 +106,29 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
-    /// The host's grab broadcast arrives after we already added ourselves locally —
-    /// skip it so the grabber list never holds duplicates (duplicate = doubled forces).
+    /// The host's grab broadcast arrives after we already added ourselves locally, and the
+    /// RPC adds unconditionally — duplicate entry = doubled grab forces. Since v0.5.0 the
+    /// RPC also does real work (throttle reset, event hooks), so instead of skipping it we
+    /// take our early entry out and let the host's genuine broadcast add the one copy.
     /// </summary>
     [HarmonyPatch(typeof(PhysGrabObject), "GrabPlayerAddRPC")]
     internal static class GrabPlayerAddDedupePatch
     {
-        private static bool Prefix(PhysGrabObject __instance, int photonViewID)
+        private static void Prefix(PhysGrabObject __instance, int photonViewID, PhotonMessageInfo _info)
         {
-            if (!SimManager.Ready || !SimManager.IsClientInLobby()) return true;
+            if (!SimManager.Ready || !SimManager.IsClientInLobby()) return;
+            // only a real host broadcast will re-add; a rejected one must not cost our entry
+            if (_info.Sender != PhotonNetwork.MasterClient) return;
 
             PhotonView pv = PhotonView.Find(photonViewID);
             PhysGrabber grabber = pv != null ? pv.GetComponent<PhysGrabber>() : null;
-            if (grabber != null && __instance.playerGrabbing.Contains(grabber))
+            if (grabber != null && __instance.playerGrabbing.Remove(grabber))
             {
                 if (Plugin.VerboseLogging.Value)
                 {
                     Plugin.Log.LogInfo($"[dedupe] host grab broadcast for {__instance.name} (already registered locally)");
                 }
-                return false;
             }
-            return true;
         }
     }
 
@@ -157,44 +148,112 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
-    /// While simulating, the vanilla read must not apply host state (host state comes from
-    /// our low-level capture instead). The stream is still consumed to stay aligned for any
-    /// component that reads after the transform view.
+    /// Host state for simulated objects comes from the game's OWN decode of the packet
+    /// (v0.5.0 packs it into a byte[] we would otherwise have to re-implement). The
+    /// original always runs; the postfix copies the decoded host state into the simulation.
+    /// The decode also writes to the rigidbody — isKinematic (the host flags every HELD
+    /// object kinematic for clients, every packet), sleep/wake with zeroed velocity, and a
+    /// position snap on the first packet. The old stream-discard never let any of that touch
+    /// an object we simulate, so the transpiler routes those writes through filters that
+    /// drop them for the object being decoded.
     /// </summary>
     [HarmonyPatch(typeof(PhotonTransformView), "OnPhotonSerializeView")]
     internal static class TransformViewSerializePatch
     {
-        private static bool Prefix(PhotonTransformView __instance, PhotonStream stream, PhotonMessageInfo info, bool __runOriginal)
+        private static void Prefix(PhotonTransformView __instance, PhotonStream stream, PhotonMessageInfo info,
+            bool __runOriginal, out SimManager.HostRead __state)
         {
-            // another mod's prefix already skipped the original — the stream data is
-            // theirs to consume, reading it again would corrupt the packet
-            if (!__runOriginal) return false;
-            if (!SimManager.Ready || stream.IsWriting) return true;
-            if (!SimManager.IsRegistered(__instance)) return true;
+            __state = default;
+            SimManager.activeRead = null;
+            // another mod's prefix skipped the original: nothing gets decoded to copy
+            if (!__runOriginal || !SimManager.Ready || stream.IsWriting) return;
+            // vanilla ignores non-host senders; so do we
+            if (info.Sender != PhotonNetwork.MasterClient) return;
+            SimManager.BeginHostRead(__instance, out __state);
+        }
 
-            // vanilla ignores non-host senders without reading; mirror that
-            if (info.Sender != PhotonNetwork.MasterClient) return false;
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var filters = new Dictionary<MethodInfo, MethodInfo>();
+            void Map(MethodInfo original, string filter)
+            {
+                if (original != null) filters[original] = AccessTools.Method(typeof(TransformViewSerializePatch), filter);
+            }
+            Map(AccessTools.PropertySetter(typeof(Rigidbody), "isKinematic"), nameof(SetKinematic));
+            Map(AccessTools.PropertySetter(typeof(Rigidbody), "linearVelocity"), nameof(SetVelocity));
+            Map(AccessTools.PropertySetter(typeof(Rigidbody), "velocity"), nameof(SetVelocity));
+            Map(AccessTools.PropertySetter(typeof(Rigidbody), "angularVelocity"), nameof(SetAngularVelocity));
+            Map(AccessTools.Method(typeof(Rigidbody), "Sleep"), nameof(Sleep));
+            Map(AccessTools.Method(typeof(Rigidbody), "WakeUp"), nameof(WakeUp));
+            Map(AccessTools.PropertySetter(typeof(Rigidbody), "position"), nameof(SetBodyPosition));
+            Map(AccessTools.PropertySetter(typeof(Rigidbody), "rotation"), nameof(SetBodyRotation));
+            Map(AccessTools.PropertySetter(typeof(Transform), "position"), nameof(SetTransformPosition));
+            Map(AccessTools.PropertySetter(typeof(Transform), "rotation"), nameof(SetTransformRotation));
 
+            int replaced = 0;
+            foreach (CodeInstruction ins in instructions)
+            {
+                if ((ins.opcode == OpCodes.Call || ins.opcode == OpCodes.Callvirt)
+                    && ins.operand is MethodInfo m && filters.TryGetValue(m, out MethodInfo filter))
+                {
+                    // instance call (target, args...) -> static filter(target, args...): same stack
+                    ins.opcode = OpCodes.Call;
+                    ins.operand = filter;
+                    replaced++;
+                }
+                yield return ins;
+            }
+            if (replaced == 0)
+            {
+                Plugin.Log.LogWarning("TransformViewSerializePatch: no rigidbody writes found in " +
+                    "PhotonTransformView.OnPhotonSerializeView — game code may have changed.");
+            }
+        }
+
+        // the decode may only touch a simulated body's physics state if we are not simulating it
+        private static bool Owned(Rigidbody rb)
+        {
+            SimManager.SimState st = SimManager.activeRead;
+            return st != null && st.rb == rb;
+        }
+
+        // the first-packet placement is vanilla behaviour we keep — except for an object in
+        // our hand, which must not be yanked away
+        private static bool Held(Component c)
+        {
+            SimManager.SimState st = SimManager.activeRead;
+            return st != null && st.localGrab && st.rb != null && (c == st.rb || c == st.rb.transform);
+        }
+
+        private static void SetKinematic(Rigidbody rb, bool value) { if (!Owned(rb)) rb.isKinematic = value; }
+        private static void SetVelocity(Rigidbody rb, Vector3 value) { if (!Owned(rb)) rb.linearVelocity = value; }
+        private static void SetAngularVelocity(Rigidbody rb, Vector3 value) { if (!Owned(rb)) rb.angularVelocity = value; }
+        private static void Sleep(Rigidbody rb) { if (!Owned(rb)) rb.Sleep(); }
+        private static void WakeUp(Rigidbody rb) { if (!Owned(rb)) rb.WakeUp(); }
+        private static void SetBodyPosition(Rigidbody rb, Vector3 value) { if (!Held(rb)) rb.position = value; }
+        private static void SetBodyRotation(Rigidbody rb, Quaternion value) { if (!Held(rb)) rb.rotation = value; }
+        private static void SetTransformPosition(Transform tf, Vector3 value) { if (!Held(tf)) tf.position = value; }
+        private static void SetTransformRotation(Transform tf, Quaternion value) { if (!Held(tf)) tf.rotation = value; }
+
+        private static void Finalizer()
+        {
+            SimManager.activeRead = null;
+        }
+
+        private static void Postfix(PhotonTransformView __instance, SimManager.HostRead __state)
+        {
+            if (__state.st == null) return;
             try
             {
-                // consume-and-discard, must match PhotonTransformView's write order exactly
-                stream.ReceiveNext(); // isSleeping
-                stream.ReceiveNext(); // teleport
-                stream.ReceiveNext(); // isKinematic
-                stream.ReceiveNext(); // velocity
-                stream.ReceiveNext(); // angularVelocity
-                stream.ReceiveNext(); // position
-                stream.ReceiveNext(); // direction
-                stream.ReceiveNext(); // rotation
+                SimManager.EndHostRead(__instance, __state);
             }
             catch (Exception e)
             {
                 if (Plugin.VerboseLogging.Value)
                 {
-                    Plugin.Log.LogWarning($"Stream discard failed on {__instance.name}: {e.Message}");
+                    Plugin.Log.LogWarning($"Host state read failed on {__instance.name}: {e.Message}");
                 }
             }
-            return false;
         }
     }
 
@@ -345,9 +404,10 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
-    /// The BepInEx plugin component's Update/FixedUpdate never run in this game, so the
-    /// driver loops ride on game code that provably updates: GameDirector (every frame)
-    /// and PlayerController (every physics step, exists whenever gameplay exists).
+    /// The BepInEx plugin component's Update/FixedUpdate never ran before game v0.5.0 (they
+    /// do now), so the driver loops ride on game code that provably updates: GameDirector
+    /// (every frame) and PlayerController (every physics step, exists whenever gameplay
+    /// exists). Both drivers are guarded to run once per frame/step, whichever fires.
     /// </summary>
     [HarmonyPatch]
     internal static class DriverHooksPatch

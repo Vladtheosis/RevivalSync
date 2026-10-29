@@ -820,3 +820,43 @@ Other mods in the profile broken by v0.5.0 (any could cause menu trouble): REPOC
 (UIMousePosRemapPatch fails: SemiFunc.UIMousePosToUIPos gained an overload, while its
 ultrawide mode still shifts buttons ~130px - REPO buttons are grey until hovered, so a
 mouse/visual mismatch looks exactly like "greyed out"), Universal Font Patcher (TMP Awake gone).
+
+## 1.3.0 - port to game v0.5.0
+
+Design: do NOT re-implement the packed format. The game's own OnPhotonSerializeView decodes
+every packet (original always runs now); a postfix copies m_NetworkPosition/Rotation,
+receivedVelocity/AngularVelocity, isSleeping, isKinematic into SimState. A transpiler on
+the same method swaps the decode's Rigidbody/Transform writes (isKinematic, linearVelocity,
+angularVelocity, Sleep, WakeUp, position, rotation) for static filters that drop them for
+the object currently being decoded (SimManager.activeRead, cleared in a Finalizer).
+- First design was "let it write, undo afterwards". Rejected before shipping: the host
+  flags every HELD object kinematic for clients in every packet, so the undo would toggle
+  isKinematic on a held body every packet - velocity loss/stutter. Filter, never undo.
+- "Was a NEW packet applied?" = lastReceiveTimestamp changed (or m_firstTake flipped).
+  NOT lastReceiveData identity - ReceiveChanged copies INTO the existing buffer.
+- Host teleport = receivedTeleportRevision changed. The view's teleport flag also fires on
+  m_Distance > 5 (our copy far off), which is not a host teleport - cleared after reading.
+- First packet (m_firstTake) placement is allowed through (vanilla spawn placement) except
+  for an object we are holding.
+- Drones while flying (droneExempt) keep the full vanilla decode.
+- HostStalled: per-object packets are no longer a liveness signal (repeat packets dropped,
+  far objects on a 2s heartbeat). SerializeReadCapturePatch is now a heartbeat only: ANY
+  host serialization = alive. byViewId/GetByViewId/IsRegistered removed (only fed the old
+  raw scan).
+- GrabPlayerAddRPC now also resets the throttle divisor and fires a Halloween event hook.
+  The dedupe no longer skips the RPC: it removes our early entry and lets the genuine host
+  broadcast (sender == master only) re-add it once.
+- Smoothing: m_Direction gone -> hinge velocity from receivedPosition - prevPosition (what
+  m_Direction was). Owner-stream acceptance (1.2.22) removed - vanilla drops non-host
+  packets before decoding, so those fields were stale. Records only when lastReceiveTimestamp
+  moved.
+- Unity 6: FindObjectsOfType -> FindObjectsByType(None). Rigidbody.velocity is obsolete but
+  forwards to linearVelocity; left as is (warnings only).
+- Verified against the v0.5.0 decompile: every other reflected member and patch target
+  exists, and all six authority-transpiler targets still contain their master checks.
+- NOT verified in a lobby yet. On an older game version 1.3.0 self-disables (new fields).
+Password-screen bug: user confirmed still greyed out with 1.2.24 (fully inert) - RevivalSync
+ruled out. NetworkConnect reparents the password page and the cursor out of the menu
+hierarchy; REPO Fidelity's ultrawide mode then shifts its buttons ~130px while its mouse
+remap patch failed to load (ambiguous UIMousePosToUIPos). Top suspect; user to test with
+REPO Fidelity off.

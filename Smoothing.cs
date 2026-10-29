@@ -8,7 +8,7 @@ namespace RevivalSync
 {
     /// <summary>
     /// Snapshot (Hermite) interpolation for host-synced objects the simulation does NOT own
-    /// (enemies, doors, players' tumbles...), based on the technique from BlueAmulet's
+    /// (enemies, doors...), based on the technique from BlueAmulet's
     /// REPONetworkTweaks — but additive: the vanilla PhotonTransformView still runs untouched,
     /// and we only re-position the object afterwards with a smoother estimate.
     /// </summary>
@@ -29,7 +29,6 @@ namespace RevivalSync
             internal Rigidbody rb;
             internal Transform tf;
             internal PhysGrabHinge hinge;
-            internal PhotonView view;   // whoever owns it is the authority for its transform
             internal readonly LinkedList<Snapshot> snapshots = new LinkedList<Snapshot>();
             internal Snapshot prev;
             internal float interpStartTime = -1f;
@@ -54,7 +53,8 @@ namespace RevivalSync
         private static AccessTools.FieldRef<PhotonTransformView, Quaternion> recvRot;
         private static AccessTools.FieldRef<PhotonTransformView, Vector3> recvVel;
         private static AccessTools.FieldRef<PhotonTransformView, Vector3> recvAngVel;
-        private static AccessTools.FieldRef<PhotonTransformView, Vector3> direction;
+        private static AccessTools.FieldRef<PhotonTransformView, Vector3> prevRecvPos;
+        private static AccessTools.FieldRef<PhotonTransformView, int> receiveStamp;
         private static AccessTools.FieldRef<PhotonTransformView, bool> teleportField;
         private static AccessTools.FieldRef<PhotonTransformView, bool> sleepingField;
         private static AccessTools.FieldRef<PhysGrabHinge, bool> hingeBroken;
@@ -67,7 +67,8 @@ namespace RevivalSync
                 recvRot = AccessTools.FieldRefAccess<PhotonTransformView, Quaternion>("receivedRotation");
                 recvVel = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("receivedVelocity");
                 recvAngVel = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("receivedAngularVelocity");
-                direction = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("m_Direction");
+                prevRecvPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("prevPosition");
+                receiveStamp = AccessTools.FieldRefAccess<PhotonTransformView, int>("lastReceiveTimestamp");
                 teleportField = AccessTools.FieldRefAccess<PhotonTransformView, bool>("teleport");
                 sleepingField = AccessTools.FieldRefAccess<PhotonTransformView, bool>("isSleeping");
                 hingeBroken = AccessTools.FieldRefAccess<PhysGrabHinge, bool>("broken");
@@ -107,7 +108,6 @@ namespace RevivalSync
                     rb = ptv.GetComponent<Rigidbody>(),
                     tf = ptv.transform,
                     hinge = ptv.GetComponent<PhysGrabHinge>(),
-                    view = ptv.GetComponent<PhotonView>(),
                     smoothFreq = BaseFrequency(),
                 };
                 states[ptv] = st;
@@ -145,26 +145,25 @@ namespace RevivalSync
         [HarmonyPatch(typeof(PhotonTransformView), "OnPhotonSerializeView")]
         internal static class SerializePatch
         {
-            private static void Postfix(PhotonTransformView __instance, PhotonStream stream, PhotonMessageInfo info, bool __runOriginal)
+            private static void Prefix(PhotonTransformView __instance, out int __state)
+            {
+                __state = receiveStamp != null && __instance != null ? receiveStamp(__instance) : 0;
+            }
+
+            private static void Postfix(PhotonTransformView __instance, PhotonStream stream, PhotonMessageInfo info, bool __runOriginal, int __state)
             {
                 // if another patch skipped the original, the fields are stale — record nothing
                 if (!__runOriginal || stream.IsWriting) return;
+                // 1.2.22 also accepted a view OWNER's stream (players' tumbling bodies). Since
+                // v0.5.0 the transform view drops every non-host packet before decoding, so
+                // there is nothing fresh to read from those — host packets only.
+                if (info.Sender != PhotonNetwork.MasterClient) return;
+                // the view skips repeats of an unchanged packet; its receive stamp only moves
+                // when it actually decoded a new one — otherwise the fields are stale
+                if (receiveStamp(__instance) == __state) return;
                 if (!ShouldSmooth(__instance)) return;
 
                 InterpState st = GetOrCreate(__instance);
-                // Accept the stream from whoever OWNS this view, not only from the host.
-                // Physics props are host-owned, but a PLAYER's body is owned by that
-                // player and streamed straight from them — most visibly the ragdoll you
-                // become when you press Q (tumble). Requiring the master here meant those
-                // were never smoothed at all: they stepped at the raw ~10Hz packet rate
-                // while everything around them glided, which is the "Q jump isn't smooth"
-                // report. (Your OWN body is never affected — we only ever smooth data we
-                // RECEIVE, and you don't receive your own.)
-                if (info.Sender != PhotonNetwork.MasterClient
-                    && (st.view == null || info.Sender != st.view.Owner))
-                {
-                    return;
-                }
                 int timestamp = info.SentServerTimestamp;
                 if (st.haveFirst && timestamp == st.lastTimestamp) return;
 
@@ -204,9 +203,10 @@ namespace RevivalSync
             };
 
             // doors: rigidbody velocity is useless around a hinge, derive it from movement
+            // (v0.5.0 dropped the streamed direction; it was this same packet-to-packet delta)
             if (st.hinge != null && !hingeBroken(st.hinge))
             {
-                Vector3 dir = direction(ptv);
+                Vector3 dir = recvPos(ptv) - prevRecvPos(ptv);
                 snap.velocity = st.haveFirst
                     ? dir / Mathf.Max(1, timestamp - st.lastTimestamp) * 1000f
                     : dir / st.smoothFreq;

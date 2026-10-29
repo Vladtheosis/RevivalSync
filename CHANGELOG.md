@@ -2,6 +2,19 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.3.0 — ported to game v0.5.0 (needs testing)
+
+- **Works on R.E.P.O. v0.5.0 again.** The update changed how the host sends object
+  positions (one compressed packet per object instead of separate values), which switched
+  RevivalSync off. The mod now lets the game unpack each packet itself and reads the
+  result, so small format tweaks in future updates should not break it again.
+- This version is for game v0.5.0 and newer only. On an older game version it switches
+  itself off.
+- Other players' tumbles (Q) are no longer extra-smoothed: since v0.5.0 the game itself
+  ignores that data from anyone but the host, so there is nothing for the mod to smooth.
+- **First build on the new game version — please report anything odd** (with Verbose
+  Logging on and your LogOutput.log attached).
+
 # 1.2.24
 
 - **Not yet working on game v0.5.0.** The update rewrote how the game syncs objects, so
