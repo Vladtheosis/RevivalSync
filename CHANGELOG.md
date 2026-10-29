@@ -2,6 +2,14 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.3.3
+
+- **Self_Hosted_Photon works on game v0.5.0.** Its region page (the way you host on your
+  own Photon server) called a Steam login function the game removed in v0.5.0, so the page
+  crashed instead of loading. RevivalSync now runs that page with the game's new login
+  call. Only applies while Self_Hosted_Photon still has the old call — an updated version
+  of it is left alone.
+
 # 1.3.2
 
 - Verbose logs now record your ping. How tight a held cart feels depends directly on

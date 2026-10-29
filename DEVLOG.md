@@ -899,3 +899,22 @@ session ran only REPO_HD + MoreStamina + True Ultrawide beside RevivalSync (grap
 no overlap) and still showed 0.208s. Zero snaps / stuck / handbacks in all of them.
 Lesson: before hunting a regression in "feel", normalise drift by speed - it is a lag gauge.
 1.3.2 logs PhotonNetwork.GetPing() in [stats] so the next comparison needs no inference.
+
+## 1.3.3 - Self_Hosted_Photon (zyxterus 0.1.0) compat; reviewed PhotonV4ServerVoiceFix (gil666 2.1.1)
+
+User installed both to self-host Photon (loop = client ping to the host PC, instead of client +
+host ping to a Photon Cloud region). Read both fully: no network/file access beyond config, no
+PhotonNetwork touch at plugin load, no overlap with RevivalSync's hooks.
+- Self_Hosted_Photon: prefix on DataDirector.PhotonSetAppId (GpBinaryV16, empty AppIds,
+  Server/Port from config, UseNameServer=false) + Lobby.SetData region "eu" + replaces
+  MenuPageRegions.Start with a "Custom Host" page. That coroutine calls
+  SteamManager.SendSteamAuthTicket, GONE in v0.5.0 (now Platforms.PlatformManager
+  .SetPhotonAuthTicket) -> MissingMethodException, region page never loads. Compat prefixes
+  ITS StartPrefix and runs the same page with the v0.5.0 sequence (copied from the game's own
+  GetRegions). Gated on the old method being absent, and on the mod's own Enabled config.
+  WARNING to users: it defaults Enabled=true, Address=127.0.0.1 - with it on, normal lobbies
+  connect to nothing.
+- VoiceFix: all targets exist on v0.5.0 (VoiceConnection.Init/cppCompatibilityMode,
+  LoadBalancingTransport(2), LocalVoice.TransmitEnabled, ExitGames ByteArraySlice in
+  Photon3Unity3D). Note: it forces cppCompatibilityMode even on Photon Cloud. No action.
+csproj: + UnityEngine.UIModule, Unity.TextMeshPro references (compat UI code).

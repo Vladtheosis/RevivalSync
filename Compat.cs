@@ -1,6 +1,13 @@
 using System;
+using System.Collections;
+using System.Reflection;
 using BepInEx.Bootstrap;
+using BepInEx.Configuration;
 using HarmonyLib;
+using Photon.Pun;
+using Photon.Realtime;
+using Platforms;
+using UnityEngine;
 
 namespace RevivalSync
 {
@@ -20,6 +27,89 @@ namespace RevivalSync
             catch (Exception e) { Plugin.Log.LogError($"[compat] CartSpeedSync handling failed: {e}"); }
             try { FixRepoFidelity(); }
             catch (Exception e) { Plugin.Log.LogError($"[compat] REPO Fidelity handling failed: {e}"); }
+            try { FixSelfHostedPhoton(); }
+            catch (Exception e) { Plugin.Log.LogError($"[compat] Self_Hosted_Photon handling failed: {e}"); }
+        }
+
+        // ---- Self_Hosted_Photon (zyxterus) 0.1.0 on game v0.5.0 ----
+
+        private static ConfigEntry<bool> selfHostEnabled;
+        private static AccessTools.FieldRef<MenuPageRegions, bool> regionsConnected;
+        private static AccessTools.FieldRef<MenuElementRegion, string> regionCode;
+
+        /// <summary>
+        /// Self_Hosted_Photon replaces the region page with a single "Custom Host" entry. Its
+        /// coroutine calls SteamManager.SendSteamAuthTicket(), which v0.5.0 replaced with
+        /// PlatformManager.SetPhotonAuthTicket() — so with it enabled the region page (the way
+        /// to host) throws MissingMethodException and never loads. Same page, v0.5.0 call.
+        /// Applies only while that old method is really gone; an updated mod is left alone.
+        /// </summary>
+        private static void FixSelfHostedPhoton()
+        {
+            Type patchType = AccessTools.TypeByName("Self_Hosted_Photon.Patches.MenuPageRegionsPatch");
+            MethodInfo startPrefix = patchType != null ? AccessTools.Method(patchType, "StartPrefix") : null;
+            if (startPrefix == null) return;
+            if (AccessTools.Method(typeof(SteamManager), "SendSteamAuthTicket") != null) return;
+
+            Type cfg = AccessTools.TypeByName("Self_Hosted_Photon.ConfigManager");
+            selfHostEnabled = cfg != null ? AccessTools.Property(cfg, "Enabled")?.GetValue(null) as ConfigEntry<bool> : null;
+            regionsConnected = AccessTools.FieldRefAccess<MenuPageRegions, bool>("connectedToMaster");
+            regionCode = AccessTools.FieldRefAccess<MenuElementRegion, string>("regionCode");
+
+            new Harmony(Plugin.PluginGuid).Patch(startPrefix,
+                prefix: new HarmonyMethod(typeof(Compat), nameof(SelfHostStartPrefix)));
+            Plugin.Log.LogInfo("[compat] Self_Hosted_Photon: region page updated for game v0.5.0 (new Steam auth call).");
+        }
+
+        private static bool SelfHostStartPrefix(MenuPageRegions __instance, ref bool __result)
+        {
+            // disabled in its own config: its prefix lets the game's page run; so do we
+            if (selfHostEnabled != null && !selfHostEnabled.Value) return true;
+            __instance.StartCoroutine(CustomHostRegionPage(__instance));
+            __result = false; // skip the game's own region page, like the mod intends
+            return false;
+        }
+
+        /// <summary>Self_Hosted_Photon 0.1.0's region page, with v0.5.0's connect sequence
+        /// (taken from the game's own MenuPageRegions.GetRegions).</summary>
+        private static IEnumerator CustomHostRegionPage(MenuPageRegions page)
+        {
+            PhotonNetwork.Disconnect();
+            while (PhotonNetwork.NetworkingClient.State != ClientState.Disconnected
+                   && PhotonNetwork.NetworkingClient.State != ClientState.PeerCreated)
+            {
+                yield return null;
+            }
+            DataDirector.instance.PhotonSetVersion();
+            DataDirector.instance.PhotonSetAppId();
+            PlatformManager.instance.SetPhotonAuthTicket();
+            PhotonNetwork.PhotonServerSettings.AppSettings.FixedRegion = "";
+            ServerSettings.ResetBestRegionCodeInPreferences();
+            PhotonNetwork.ConnectUsingSettings();
+            while (!regionsConnected(page))
+            {
+                yield return null;
+            }
+            page.loadingGraphics.SetDone();
+            yield return new WaitForSecondsRealtime(0.3f);
+
+            MenuElementRegion entry = UnityEngine.Object.Instantiate(page.regionPrefab,
+                page.transformStartPosition.position, Quaternion.identity,
+                page.transformStartPosition.parent).GetComponent<MenuElementRegion>();
+            entry.textName.text = "Custom Host";
+            entry.textName.color = Color.white;
+            entry.textPing.text = "";
+            entry.parentPage = page;
+            regionCode(entry) = "custom";
+            PhotonNetwork.Disconnect();
+            page.menuScrollBox.enabled = true;
+
+            while (page.scrollCanvasGroup.alpha < 0.99f)
+            {
+                page.scrollCanvasGroup.alpha += Time.deltaTime * 5f;
+                yield return null;
+            }
+            page.scrollCanvasGroup.alpha = 1f;
         }
 
         /// <summary>

@@ -57,6 +57,9 @@ like vanilla; only the physics feel is local.
   already gives you instant carts.
 - **REPO Fidelity — supported.** RevivalSync removes one REPO Fidelity performance shortcut
   that would otherwise disable Instant Cart Handle; the rest of REPO Fidelity is untouched.
+- **Self_Hosted_Photon — supported.** On game v0.5.0 its region page crashes (a removed
+  Steam login call); RevivalSync patches in the new call so hosting on your own Photon
+  server works. PhotonV4ServerVoiceFix needs nothing from RevivalSync.
 - **REPOConfig / MenuLib** were broken by game v0.5.0 at the time of writing (no in-game
   Mods menu). RevivalSync itself works fine without them — edit
   `BepInEx/config/com.Revival.revivalsync.cfg` instead.

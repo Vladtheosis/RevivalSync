@@ -8,7 +8,7 @@
     <LangVersion>9.0</LangVersion>
     <AssemblyName>RevivalSync</AssemblyName>
     <RootNamespace>RevivalSync</RootNamespace>
-    <Version>1.3.2</Version>
+    <Version>1.3.3</Version>
     <Authors>Revival</Authors>
     <Company>Revival</Company>
     <Copyright>Revival</Copyright>
@@ -60,6 +60,15 @@
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(GameManaged)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- UI types used by the Self_Hosted_Photon compat (Compat.cs) -->
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameManaged)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(GameManaged)\Unity.TextMeshPro.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
