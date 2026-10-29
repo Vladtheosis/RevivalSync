@@ -14,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.2.23";
+        public const string PluginVersion = "1.2.24";
 
         internal static ManualLogSource Log;
 
@@ -235,6 +235,9 @@ namespace RevivalSync
             {
                 Log.LogError("RevivalSync could not find expected game internals (the game probably updated). " +
                              "The mod has disabled itself to avoid breaking your game.");
+                // actually off: since game v0.5.0 this component's Update/FixedUpdate DO run,
+                // so returning from Awake alone left the per-frame driver ticking
+                enabled = false;
                 return;
             }
 
@@ -293,6 +296,7 @@ namespace RevivalSync
             if (patched == 0)
             {
                 Log.LogError("No patches could be applied — RevivalSync is inactive.");
+                enabled = false;
                 return;
             }
 

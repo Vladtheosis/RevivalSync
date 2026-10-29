@@ -2,6 +2,15 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.2.24
+
+- **Not yet working on game v0.5.0.** The update rewrote how the game syncs objects, so
+  RevivalSync detects the change and switches itself off — your game plays as vanilla.
+  It needs a proper port to the new system before it does anything again.
+- When it switches itself off it is now *completely* off. Since v0.5.0 a small part of
+  the mod (its per-frame loop) kept running even after "disabled itself" — that no
+  longer happens.
+
 # 1.2.23
 
 - Audit fix: the "cart carries its cargo" behaviour added in 1.2.21 now applies only to

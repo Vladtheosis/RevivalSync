@@ -789,3 +789,34 @@ in it are by design). Headlines:
 3. CORRECTION TO CARRY FORWARD: tumble launch is NOT fixed and never was. The only
    tumble change ever shipped is 1.2.22, which smooths OTHER players' tumbling bodies
    (visual, Smoothing.cs). Do not tell users their own Q delay is addressed.
+
+## 1.2.24 - game v0.5.0 broke the mod; "disabled itself" now means fully off
+
+2026-10-29: REPO v0.5.0 shipped (Photon version string v0.5.0.net3, whole Managed folder
+replaced, Unity 6 - Rigidbody.linearVelocity). RevivalSync 1.2.23 self-disabled at load:
+`PhotonTransformView.m_StoredPosition` no longer exists. It is NOT a rename - the class
+was rewritten:
+- the stream is now ONE packed byte[] per object (SemiNetPackedStream/SemiNetPackedReader:
+  flags byte, ushort teleportRevision, vel, angVel, pos, rot; optional full precision).
+  Our capture patch reads the old multi-value stream and must be rewritten.
+- teleports are now a revision counter (teleportRevision), not just a flag.
+- throttling: idle objects send at divisor 50 with a 2s heartbeat (networkHeartbeatTime),
+  so "host went quiet" no longer means "host is stalled" - HostStalled logic must change.
+- OnSerializeView returns early for non-master senders (player-streamed views).
+- gone: m_StoredPosition, kinematicClientForced (bool). kinematicClientForcedTimer remains.
+Also new: the Plugin component's Update/FixedUpdate now RUN (they never did before, see the
+driver notes). So 1.2.23's "disabled itself" still ran SimDriver.FrameUpdate every frame.
+It was inert (Ready=false gates everything, PhotonReady stays false) but not off. Fix:
+`enabled = false` on both disable paths.
+
+Bug report (user): with RevivalSync on, the private-game password screen stayed greyed out;
+with it off, it worked. Evidence: both session logs are identical through the password
+page (same menu NREs, same steps) and both end AT the page - AsyncLoggers ate the tails, so
+neither log shows what happened after. In the broken session the mod applied zero patches.
+No mechanism found; 1.2.24's fully-off disable is the conservative fix and the next test.
+Other mods in the profile broken by v0.5.0 (any could cause menu trouble): REPOConfig 1.2.6
+(NRE in its MenuPageMain.Start hook, then MenuPageMain.Update NRE every frame), MenuLib 2.5.4
+(MenuSelectableElement.menuID is now a property - field lookup fails), REPO Fidelity 1.7.8
+(UIMousePosRemapPatch fails: SemiFunc.UIMousePosToUIPos gained an overload, while its
+ultrawide mode still shifts buttons ~130px - REPO buttons are grey until hovered, so a
+mouse/visual mismatch looks exactly like "greyed out"), Universal Font Patcher (TMP Awake gone).
