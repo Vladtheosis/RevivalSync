@@ -1623,8 +1623,10 @@ namespace RevivalSync
                 if (SimManager.IsClientInLobby())
                 {
                     int packets = SimManager.PacketsCaptured;
+                    // ping: a held object trails the host by about speed x lag, so the same
+                    // play feels tighter or looser purely with connection quality
                     Plugin.Log.LogInfo($"[stats] registered={SimManager.RegisteredCount} held={SimManager.HeldCount} " +
-                                       $"packets={packets} (+{packets - lastPacketCount} in 10s)");
+                                       $"packets={packets} (+{packets - lastPacketCount} in 10s) ping={PhotonNetwork.GetPing()}ms");
                     lastPacketCount = packets;
                 }
             }

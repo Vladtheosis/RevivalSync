@@ -2,6 +2,11 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.3.2
+
+- Verbose logs now record your ping. How tight a held cart feels depends directly on
+  connection lag, so this makes "it felt better last time" reports answerable.
+
 # 1.3.1 — mod compatibility
 
 - **CartSpeedSync is not supported and is now switched off automatically.** It pushes the

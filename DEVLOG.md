@@ -887,3 +887,15 @@ CAUTION for the record: this does not mean every past bug was Fidelity. The rota
 cargo carry, upgrade theft etc. were real RevivalSync bugs with their own log proof.
 REPO Fidelity's stuck Graphics page on v0.5.0 = it builds that page with MenuLib, whose button
 template is gone (see REPOConfigFix, a separate local stopgap in Documents\REPOMods\REPOConfigFix).
+
+## 2026-10-29 evening - "first session was flawless, later ones not" (1.3.2 adds ping)
+
+Held-cart drift is NOT corrected while held (NR rule), so it is a pure trail: drift ~= speed x lag.
+drift/speed per session: flawless 20:28 = 0.165s; 21:29 = 0.220s; 21:35 = 0.196s; 21:38 = 0.208s
+(the 20:48 CartSpeedSync session: 0.212s at much higher speed + double drift). Later sessions also
+pushed the cart ~20% faster (2.9 vs 3.4 m/s). So the later sessions were ~30-55ms laggier
+connections (different rooms each time) plus faster play - not a mod regression. The 21:38
+session ran only REPO_HD + MoreStamina + True Ultrawide beside RevivalSync (graphics-only hooks,
+no overlap) and still showed 0.208s. Zero snaps / stuck / handbacks in all of them.
+Lesson: before hunting a regression in "feel", normalise drift by speed - it is a lag gauge.
+1.3.2 logs PhotonNetwork.GetPing() in [stats] so the next comparison needs no inference.
