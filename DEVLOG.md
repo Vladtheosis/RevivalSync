@@ -867,3 +867,23 @@ off. The prior session's 18,485 errors were ALL REPOConfig 1.2.6 (MenuPageMain.S
 MenuPageMain.Update NRE every frame) - REPOConfig/MenuLib/REPO Fidelity are broken on v0.5.0.
 Benign log pattern: [stale-grab] right after a sub-0.2s grab/release on a cart = the host's
 late GrabPlayerAddRPC re-adding us after we already let go; the scrub cleans it (1.2.16).
+
+## 1.3.1 - mod compatibility (CartSpeedSync off, REPO Fidelity cart-handle skip removed)
+
+Every archived session since July 2026 ran BOTH REPO Fidelity (1.7.7/1.7.8) and CartSpeedSync.
+The one "flawless" session (2026-10-29 20:28) is the only one with neither. Scanned every hook
+of every mod in the profile (Compat scan): only these two touch RevivalSync's code paths.
+- CartSpeedSync postfixes CartSteer (sprint push). RevivalSync runs CartSteer locally for the
+  held cart -> our copy outruns the host's. Measured on held carts: avg drift 0.37m -> 0.78m,
+  max 1.2 -> 2.1m. Now Harmony.UnpatchID("discjenny.CartSpeedSync") on the first frame
+  (Compat.Apply), always - user decision: "not supported, auto-disable".
+- REPO Fidelity GrabAreaIdleSkipPatch: prefix on PhysGrabObjectGrabArea.Update that returns
+  false whenever !IsMasterClientOrSingleplayer -> our Instant Cart Handle transpiler never ran.
+  Hardcoded (Settings.AllocationFixesEnabled = true, no config). Removed that one prefix only.
+  NOT removed: PhysGrabObjectFixPatch (skips PhysGrabObject.Update for sleeping un-grabbed
+  objects, culls grabbers with grabbed=false) - possible edge effects at grab start, unproven;
+  F11 in-game toggles it if ever suspected.
+CAUTION for the record: this does not mean every past bug was Fidelity. The rotation backstop,
+cargo carry, upgrade theft etc. were real RevivalSync bugs with their own log proof.
+REPO Fidelity's stuck Graphics page on v0.5.0 = it builds that page with MenuLib, whose button
+template is gone (see REPOConfigFix, a separate local stopgap in Documents\REPOMods\REPOConfigFix).

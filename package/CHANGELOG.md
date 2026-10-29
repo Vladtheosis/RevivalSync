@@ -2,7 +2,18 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
-# 1.3.0 — ported to game v0.5.0 (needs testing)
+# 1.3.1 — mod compatibility
+
+- **CartSpeedSync is not supported and is now switched off automatically.** It pushes the
+  cart along while you sprint, but with RevivalSync your own copy of the cart is the one
+  being steered, so it ran ahead of the host's real cart: held carts drifted about twice
+  as far and flung loot. RevivalSync already makes carts instant — you can uninstall it.
+- **Works properly alongside REPO Fidelity now.** One of REPO Fidelity's performance
+  shortcuts skipped the cart-handle code on clients, which silently turned off Instant
+  Cart Handle (cart grabs went back to waiting on the host). RevivalSync removes just that
+  one shortcut; everything else in REPO Fidelity keeps working.
+
+# 1.3.0 — ported to game v0.5.0
 
 - **Works on R.E.P.O. v0.5.0 again.** The update changed how the host sends object
   positions (one compressed packet per object instead of separate values), which switched

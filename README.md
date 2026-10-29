@@ -50,6 +50,17 @@ and the release-state overwrite that makes throws fly clean. Thank you.
 Item *effects* — damage, explosions, battery drain, breaking — stay host-decided exactly
 like vanilla; only the physics feel is local.
 
+## Compatibility
+
+- **CartSpeedSync — not supported.** If it is installed, RevivalSync switches it off
+  automatically (it makes your copy of a held cart run ahead of the host's). RevivalSync
+  already gives you instant carts.
+- **REPO Fidelity — supported.** RevivalSync removes one REPO Fidelity performance shortcut
+  that would otherwise disable Instant Cart Handle; the rest of REPO Fidelity is untouched.
+- **REPOConfig / MenuLib** were broken by game v0.5.0 at the time of writing (no in-game
+  Mods menu). RevivalSync itself works fine without them — edit
+  `BepInEx/config/com.Revival.revivalsync.cfg` instead.
+
 ## Known issues
 
 - **Doors and cupboards can occasionally appear desynced** from what the host sees
