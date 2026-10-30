@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
@@ -14,7 +15,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.4.1";
+        public const string PluginVersion = "1.4.2";
 
         internal static ManualLogSource Log;
 
@@ -32,6 +33,8 @@ namespace RevivalSync
         internal static ConfigEntry<bool> PhotonLateUpdate;
         internal static ConfigEntry<bool> SmoothSync;
         internal static ConfigEntry<bool> TrajectoryMatching;
+        internal static ConfigEntry<bool> ResetToDefaults;
+        private static bool resetting;
         internal static ConfigEntry<bool> Extrapolate;
         internal static ConfigEntry<float> Future;
         internal static ConfigEntry<float> RateSmoothing;
@@ -235,6 +238,13 @@ namespace RevivalSync
             VerboseLogging = Config.Bind("3. Debug", "Verbose Logging", false,
                 "Records everything the mod does into BepInEx/LogOutput.log. Turn this ON before " +
                 "reporting a bug and include that file with the report.");
+            ResetToDefaults = Config.Bind("3. Debug", "Reset All Settings To Default", false,
+                "Turn this ON to put every RevivalSync setting back to its default. It switches " +
+                "itself back OFF once done. (REPOConfig's own \"Reset To Default\" button does the " +
+                "same; its \"Revert\" button only undoes changes you have not saved yet.)");
+            ResetToDefaults.SettingChanged += (_, __) => ResetAllSettings();
+            // also honoured when switched on by editing the .cfg file while the game was closed
+            ResetAllSettings();
 
             if (!SimManager.InitAccessors())
             {
@@ -310,7 +320,32 @@ namespace RevivalSync
                         "the mod is inert while hosting.");
         }
 
-        // fallback drivers: the plugin component's loops don't run in this game
+        /// <summary>Every RevivalSync setting back to its default, including the reset switch
+        /// itself (default OFF) — so it is a one-shot button that also works from the .cfg file.</summary>
+        private void ResetAllSettings()
+        {
+            if (resetting || ResetToDefaults == null || !ResetToDefaults.Value) return;
+            resetting = true;
+            bool saveEach = Config.SaveOnConfigSet;
+            try
+            {
+                Config.SaveOnConfigSet = false; // one write at the end, not one per setting
+                foreach (KeyValuePair<ConfigDefinition, ConfigEntryBase> kv in
+                         (IEnumerable<KeyValuePair<ConfigDefinition, ConfigEntryBase>>)Config)
+                {
+                    kv.Value.BoxedValue = kv.Value.DefaultValue;
+                }
+                Log.LogInfo("All RevivalSync settings were reset to their defaults.");
+            }
+            finally
+            {
+                Config.SaveOnConfigSet = saveEach;
+                Config.Save();
+                resetting = false;
+            }
+        }
+
+        // fallback drivers: the plugin component's loops did not run before game v0.5.0
         // (verified), so the real drivers are Harmony hooks (Patches.DriverHooksPatch) —
         // these stay as a harmless safety net, guarded against double-running
         private void Update()

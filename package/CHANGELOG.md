@@ -2,6 +2,14 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.4.2
+
+- **New: "Reset All Settings To Default"** (section 3. Debug). Turn it on and every
+  RevivalSync setting goes back to its default, then the switch turns itself off again.
+  Works from REPOConfig or by editing the config file. (In REPOConfig, the "Reset To
+  Default" button at the top of the settings list does the same thing — the "Revert"
+  button only undoes changes you have not saved yet, which is why it can look broken.)
+
 # 1.4.1
 
 - **Trajectory Matching keeps following through bounces.** In 1.4.0 a thrown item stopped

@@ -957,3 +957,16 @@ Lesson: an exit condition that hands a MOVING object to the raw sync reintroduce
 the lag artefact the feature removes - exit only when both copies are at rest.
 Also: REPOConfig/MenuLib were taken over by REPOModding (REPOConfig 1.2.7, MenuLib 2.6.0)
 and work on v0.5.0; the local REPOConfigFix stopgap is retired (user removed it).
+
+## 1.4.2 - reset switch; release candidate
+
+User: "revert to default doesn't work". REPOConfig 1.2.7 has TWO buttons: "Revert" only drops
+UNSAVED changes (no-op when nothing is pending - looks broken), "Reset To Default" (first row of
+the mod's scroll list, confirm popup) sets BoxedValue = DefaultValue for every entry. Ours all
+have defaults, so that works. Added a self-clearing "3. Debug / Reset All Settings To Default"
+switch anyway (works without REPOConfig, honoured at startup if set in the .cfg); one Save at
+the end via SaveOnConfigSet=false; re-entrancy guarded (the loop resets the switch itself).
+Note: the user's own cfg had Trajectory Matching ON because it was set there for testing
+(1.4.0) - the shipped default is OFF.
+Release check (zip): versions 1.4.2 everywhere, workflow description == manifest (243
+chars), 5 files, 0 personal-info hits in md/json/dll, Trajectory default false.
