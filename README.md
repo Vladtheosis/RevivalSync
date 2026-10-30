@@ -63,9 +63,9 @@ like vanilla; only the physics feel is local.
 - **Self_Hosted_Photon — supported.** On game v0.5.0 its region page crashes (a removed
   Steam login call); RevivalSync patches in the new call so hosting on your own Photon
   server works. PhotonV4ServerVoiceFix needs nothing from RevivalSync.
-- **REPOConfig / MenuLib** were broken by game v0.5.0 at the time of writing (no in-game
-  Mods menu). RevivalSync itself works fine without them — edit
-  `BepInEx/config/com.Revival.revivalsync.cfg` instead.
+- **REPOConfig / MenuLib** — use the REPOModding versions (REPOConfig 1.2.7+, MenuLib
+  2.6.0+), which work on game v0.5.0. The older nickklmao uploads do not. RevivalSync itself
+  works fine without them — edit `BepInEx/config/com.Revival.revivalsync.cfg` instead.
 
 ## Known issues
 

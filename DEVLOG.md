@@ -943,3 +943,17 @@ Cleanup audit: no unused methods (all single-reference ones are Harmony entry po
 removed dead SimState.stuckTimer (written 5x, never read) and ridingCart (never read);
 rewrote the stale SimManager header (still described pre-v0.5.0 capture, "doors not simulated").
 Per-tick cost is O(objects) with cheap checks - there was no real slowness to remove.
+
+## 1.4.1 - Trajectory Matching: track through contacts
+
+First 1.4.0 session (2026-10-30, ping ~85ms): 23 tracked flights, error avg 0.02-0.22m,
+learned lag stable 124-171ms (~140), 0 snaps - the matching itself works. But 7/9 item
+flights ended on "contact" after 0.26-0.44s and fell back to the plain sync, which lerps a
+still-MOVING object toward the host's ~140ms-old position = the old settle, one bounce
+earlier. User: "meh". Contacts no longer end tracking (counted for the log); time alignment
+already pairs our bounce with the host's. Timeout 3s -> 6s. Still ends on: still 8 ticks on
+both, > 2.5m divergence, caught on host, cart riding, snap.
+Lesson: an exit condition that hands a MOVING object to the raw sync reintroduces exactly
+the lag artefact the feature removes - exit only when both copies are at rest.
+Also: REPOConfig/MenuLib were taken over by REPOModding (REPOConfig 1.2.7, MenuLib 2.6.0)
+and work on v0.5.0; the local REPOConfigFix stopgap is retired (user removed it).

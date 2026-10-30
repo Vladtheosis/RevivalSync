@@ -19,9 +19,10 @@ namespace RevivalSync
     /// packets and the rule holds.
     ///
     /// Corrections we apply are recorded alongside the history, so a packet that was already
-    /// in flight when we corrected is not counted twice. Any contact (a bounce diverges
-    /// legitimately between machines), a big disagreement, landing or 3 seconds ends tracking
-    /// and hands the object back to the normal sync, eased in.
+    /// in flight when we corrected is not counted twice. Tracking continues through bounces
+    /// and slides (time alignment lines the two bounces up); a big disagreement (2.5m), both
+    /// copies coming to rest, or 6 seconds ends it and hands the object back to the normal
+    /// sync, eased in.
     /// </summary>
     internal static partial class SimManager
     {
@@ -45,6 +46,7 @@ namespace RevivalSync
             internal float flightAge;
             internal int ticksSinceRelease;
             internal int stillTicks;
+            internal int contacts;
             internal Vector3 corr, corrV;           // cumulative corrections applied
             internal Vector3 remaining, remainingV; // corrections still to apply
             internal Vector3 lastVel;
@@ -64,6 +66,7 @@ namespace RevivalSync
                 flightAge = 0f;
                 ticksSinceRelease = 0;
                 stillTicks = 0;
+                contacts = 0;
                 corr = corrV = remaining = remainingV = Vector3.zero;
                 hasLastVel = false;
                 packetFresh = false;
@@ -178,6 +181,7 @@ namespace RevivalSync
             tr.flightAge = 0f;
             tr.ticksSinceRelease = 0;
             tr.stillTicks = 0;
+            tr.contacts = 0;
             tr.remaining = tr.remainingV = Vector3.zero;
             tr.packets = 0;
             tr.errSum = tr.errMax = 0f;
@@ -199,14 +203,18 @@ namespace RevivalSync
             tr.ticksSinceRelease++;
 
             Vector3 vel = st.rb.velocity;
-            // contact: a bounce diverges legitimately between the two machines — stop steering.
-            // Expected change is gravity plus whatever velocity correction we added last tick.
+            // Contacts do NOT end tracking (1.4.0 did, and its first session showed most throws
+            // handed back after 0.3s — straight into the old sync, which drags a still-moving
+            // object toward where the host had it ~140ms ago: the very settle this replaces).
+            // Comparing against our own past lines the two bounces up in time, so the same
+            // bounce costs nothing and a different bounce is steered onto the host's. Counted
+            // for the log only. Expected change: gravity plus last tick's velocity correction.
             if (tr.hasLastVel && tr.ticksSinceRelease > 3)
             {
                 Vector3 expected = tr.lastVel + (st.rb.useGravity ? Physics.gravity * dt : Vector3.zero);
-                if ((vel - expected).sqrMagnitude > 2f * 2f) { TrajEnd(st, "contact"); return false; }
+                if ((vel - expected).sqrMagnitude > 2f * 2f) tr.contacts++;
             }
-            if (tr.flightAge > 3f) { TrajEnd(st, "timeout"); return false; }
+            if (tr.flightAge > 6f) { TrajEnd(st, "timeout"); return false; }
             if (st.hostKinematic) { TrajEnd(st, "taken on host"); return false; }
 
             tr.Record(st.rb);
@@ -305,7 +313,8 @@ namespace RevivalSync
             {
                 float avg = tr.packets > 0 ? tr.errSum / tr.packets : 0f;
                 Plugin.Log.LogInfo($"[traj] {st.pgo.name}: {why} after {tr.flightAge:F2}s, " +
-                    $"{tr.packets} packets, lag {TrajLag() * 1000f:F0}ms, error avg {avg:F2}m max {tr.errMax:F2}m");
+                    $"{tr.packets} packets, {tr.contacts} contacts, lag {TrajLag() * 1000f:F0}ms, " +
+                    $"error avg {avg:F2}m max {tr.errMax:F2}m");
             }
         }
     }

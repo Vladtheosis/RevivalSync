@@ -2,6 +2,14 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.4.1
+
+- **Trajectory Matching keeps following through bounces.** In 1.4.0 a thrown item stopped
+  following the host's path the first time it touched anything — on average after a third
+  of a second — and the old sync took over, which pulls a still-moving item back toward
+  where the host had it a moment ago. That was the "meh" part. It now follows through
+  bounces and slides until the item comes to rest on both screens.
+
 # 1.4.0 — Trajectory Matching (experimental, off by default)
 
 - **New option: "Trajectory Matching (experimental)"** in section 1. Thrown items now
