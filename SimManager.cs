@@ -14,15 +14,13 @@ namespace RevivalSync
     /// the original NetworkingReworked). While the local player holds it, the blend pauses
     /// and grab forces run locally for instant response.
     ///
-    /// Host state is captured at the PhotonNetwork.OnSerializeRead level (raw event data,
-    /// like the original mod's PhotonStreamCache) — immune to observed-component order,
-    /// other mods' patches and per-component read failures.
-    ///
-    /// Hinged objects (doors, cabinets) are NOT simulated — the host owns them, exactly
-    /// like the original mod did. Their joints/springs are host-managed and locally
-    /// unreproducible without desync.
+    /// Host state is read from the game's own decode of each packet (EndHostRead) — since
+    /// v0.5.0 the payload is one packed byte[] per object. Doors and cabinets are simulated
+    /// too, with their joint kept alive and the game's own hinge logic running locally.
+    /// Thrown objects can optionally be steered onto the host's path in flight
+    /// (SimManager.Trajectory.cs).
     /// </summary>
-    internal static class SimManager
+    internal static partial class SimManager
     {
         internal class SimState
         {
@@ -46,11 +44,10 @@ namespace RevivalSync
             public ItemDrone droneSelf;     // this object IS a drone: host-owned only while flying
             public ItemToggle droneToggle;  // (toggled on = deployed = it moves itself)
             public float desyncTimer;       // how long we've been far from the host's copy while holding
-            public float stuckTimer;        // how long we've failed to converge (object wedged in geometry)
             public float debugTimer;        // rate limit for verbose diagnostics
             public int ridingTick;          // == current tick when sitting inside a locally-held cart
-            public SimState ridingCart;     // the cart it rides
             public bool wasRiding;          // rode a cart last tick: schedule a gentle staged return
+            public Trajectory traj;         // path history + in-flight steering (Trajectory Matching)
             public float rideHoldTimer;     // carts: keep marking riders briefly after use ends
             public bool mirrorHeldRot;      // item without local orientation logic: copy host rotation while held
             public ItemGun gun;             // weapons compute their hold orientation locally
@@ -314,17 +311,19 @@ namespace RevivalSync
             public int stamp;
             public bool firstTake;
             public ushort teleportRev;
+            public int sentStamp; // server time the host sent this packet (Trajectory Matching)
         }
 
         /// <summary>The simulated object whose host packet the game is decoding right now.
         /// While set, the decode's writes to that rigidbody are filtered (HostReadFilter).</summary>
         internal static SimState activeRead;
 
-        internal static bool BeginHostRead(PhotonTransformView ptv, out HostRead read)
+        internal static bool BeginHostRead(PhotonTransformView ptv, int sentStamp, out HostRead read)
         {
             read = default;
             if (ptv == null || !byPtv.TryGetValue(ptv, out SimState st) || st.rb == null) return false;
             read.st = st;
+            read.sentStamp = sentStamp;
             read.stamp = ptvLastReceiveStamp(ptv);
             read.firstTake = ptvFirstTake(ptv);
             read.teleportRev = ptvTeleportRev(ptv);
@@ -367,6 +366,7 @@ namespace RevivalSync
                 st.hasHostState = true;
                 st.lastPacketTime = Time.unscaledTime;
                 PacketsCaptured++;
+                TrajOnPacket(st, read.sentStamp);
             }
         }
 
@@ -471,7 +471,7 @@ namespace RevivalSync
             st.localGrab = true;
             st.postThrowTimer = 0f;
             st.desyncTimer = 0f;
-            st.stuckTimer = 0f;
+            st.traj?.Reset(); // a new hold starts a new path
             pgoIsMaster(pgo) = true;
             EnsureDynamic(st);
         }
@@ -482,7 +482,6 @@ namespace RevivalSync
 
             st.localGrab = false;
             st.desyncTimer = 0f;
-            st.stuckTimer = 0f;
             // carts get extra settling time: a rapid release mid-drag otherwise blends the
             // cart back toward the host's still-trailing copy (visible rollback)
             // doors get NO throw treatment: throw grace and host-cache seeding both mask
@@ -516,6 +515,10 @@ namespace RevivalSync
                 st.hostTeleport = false;
                 st.lastPacketTime = Time.unscaledTime;
             }
+
+            // Trajectory Matching: steer the flight onto the host's path from its first packet
+            // instead of flying blind for the grace period (replaces the grace when it starts)
+            TrajBeginFlight(st);
 
             // covers the unseen-release path (forced drop, knocked out of hand by hitting
             // a player): GrabEnded never ran, so the entry our grab patch added is still
@@ -753,7 +756,6 @@ namespace RevivalSync
                     if (items[i] != null && states.TryGetValue(items[i], out SimState rider))
                     {
                         rider.ridingTick = tickCounter;
-                        rider.ridingCart = st;
                     }
                 }
             }
@@ -843,6 +845,8 @@ namespace RevivalSync
                 return; // joint-anchored: grab forces + the game's own hinge logic handle it
             }
 
+            TrajRecordHeld(st);
+
             if (st.cart != null)
             {
                 DriveHeldCart(st, grabber);
@@ -875,7 +879,6 @@ namespace RevivalSync
             if (HostStalled)
             {
                 st.desyncTimer = 0f;
-                st.stuckTimer = 0f;
                 DebugHeld(st, grabber, -1f, st.rb.velocity.magnitude);
                 return;
             }
@@ -906,7 +909,10 @@ namespace RevivalSync
             {
                 st.desyncTimer = 0f;
             }
-            st.stuckTimer = 0f;
+
+            // Trajectory Matching: nudge out only the part of a held cart's disagreement that
+            // is NOT the normal ping trail
+            TrajHeldCart(st);
 
             // gadgets without local orientation logic: the host runs their straightening
             // scripts on our behalf. To make the tool STAY straight we do what the game's
@@ -1086,6 +1092,7 @@ namespace RevivalSync
                 if (st.rb.isKinematic) st.rb.isKinematic = false;
                 st.hostTeleport = false;
                 st.wasRiding = true;
+                TrajEnd(st, "landed in a cart"); // cargo rules own it now
                 return;
             }
             if (st.wasRiding)
@@ -1094,7 +1101,6 @@ namespace RevivalSync
                 // hundredths apart, so the load settles item by item instead of the whole
                 // pile jerking at once. Our correction ramp does the same job smoothly.
                 st.wasRiding = false;
-                st.ridingCart = null;
                 st.postThrowRamp = 0.5f + (cargoStagger++ & 7) * 0.05f;
             }
 
@@ -1139,6 +1145,10 @@ namespace RevivalSync
                     return;
                 }
             }
+
+            // Trajectory Matching: a tracked flight is steered onto the host's path against
+            // our own recorded past, which the plain sync below cannot do
+            if (TrajStep(st)) return;
 
             // A fresh local throw: the host still thinks the object is in our hand, so
             // ANY correction drags the flight backward toward stale data ("moves so
@@ -1323,7 +1333,6 @@ namespace RevivalSync
         {
             st.localGrab = false;
             st.desyncTimer = 0f;
-            st.stuckTimer = 0f;
             st.postThrowTimer = 0f;
             pgoIsMaster(st.pgo) = false;
             handedBack.Add(st.pgo);
@@ -1407,6 +1416,7 @@ namespace RevivalSync
                 float dist = Vector3.Distance(st.rb.position, st.hostPos);
                 Plugin.Log.LogInfo($"[snap] {st.pgo.name}: {reason} (dist={dist:F1}m)");
             }
+            TrajEnd(st, "snapped");
             st.rb.position = st.hostPos;
             st.rb.rotation = st.hostRot;
             if (!st.rb.isKinematic)

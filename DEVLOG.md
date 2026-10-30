@@ -918,3 +918,28 @@ PhotonNetwork touch at plugin load, no overlap with RevivalSync's hooks.
   LoadBalancingTransport(2), LocalVoice.TransmitEnabled, ExitGames ByteArraySlice in
   Photon3Unity3D). Note: it forces cppCompatibilityMode even on Photon Cloud. No action.
 csproj: + UnityEngine.UIModule, Unity.TextMeshPro references (compat UI code).
+
+## 1.4.0 - Trajectory Matching (third attempt at in-flight sync; off by default)
+
+History: 1.2.1 led the host target by ping (moving target -> vibration/braking), 1.2.13
+reverted to NR's still target + 0.6s blind throw grace (carts 1.5s). The grace is why a
+throw "flies alone, then settles". Third attempt, the standard netcode technique:
+- Compare host packet (host time T = info.SentServerTimestamp) with OUR state at T - L,
+  from a 64-sample per-tick history (server clock). L = upload lag us->host sim, learned
+  per flight by nearest-point match on the path (speed > 2 m/s, < 0.75m), smoothed 0.15,
+  seeded ping + 30ms. NOT "host now" (pulls throws back) and NOT "host extrapolated"
+  (target moves between packets). The correction only changes on a packet -> 1.2.13 rule kept.
+- Corrections we apply are accumulated into each sample (corr/corrV) so an in-flight packet
+  is not counted twice: compare against sample.pos + (corrNow - sample.corr).
+- remaining = error (REPLACE, never add), applied 15%/tick to position and velocity.
+- Ends (-> normal sync with postThrowRamp 0.4): contact (|dv - g dt| > 2 m/s after 3 ticks),
+  error > 2.5m, hostKinematic (caught on host), riding a cart, snap, 3s, or still 8 ticks.
+- Held cart: same comparison, xz only, 0.25m deadband, 6%/tick, cargo carried (CarryCargo) -
+  removes only real disagreement, never the ping trail (NR held rule otherwise intact).
+- History recorded only while held (so a throw's first packets, which describe the object
+  still in hand, have something to compare with) and during tracked flight.
+Log tag [traj] per flight: why it ended, packets, learned lag, avg/max error.
+Cleanup audit: no unused methods (all single-reference ones are Harmony entry points);
+removed dead SimState.stuckTimer (written 5x, never read) and ridingCart (never read);
+rewrote the stale SimManager header (still described pre-v0.5.0 capture, "doors not simulated").
+Per-tick cost is O(objects) with cheap checks - there was no real slowness to remove.

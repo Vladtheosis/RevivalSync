@@ -14,7 +14,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.3.3";
+        public const string PluginVersion = "1.4.0";
 
         internal static ManualLogSource Log;
 
@@ -31,6 +31,7 @@ namespace RevivalSync
         internal static ConfigEntry<bool> DisableTimeout;
         internal static ConfigEntry<bool> PhotonLateUpdate;
         internal static ConfigEntry<bool> SmoothSync;
+        internal static ConfigEntry<bool> TrajectoryMatching;
         internal static ConfigEntry<bool> Extrapolate;
         internal static ConfigEntry<float> Future;
         internal static ConfigEntry<float> RateSmoothing;
@@ -179,6 +180,10 @@ namespace RevivalSync
                     "0 = off. If set, automatically performs the Resync Loot teleport every " +
                     "this many seconds, so you never have to press the key yourself.",
                     new AcceptableValueRange<float>(0f, 120f)));
+            TrajectoryMatching = Config.Bind("1. Main", "Trajectory Matching (experimental)", false,
+                "Thrown items and carts you push follow the host's path while they move, instead " +
+                "of flying on your screen alone and then settling where the host has them. " +
+                "Turn it on and off in the same session to compare. Takes effect on your next throw.");
             SmoothSync = Config.Bind("1. Main", "Smooth Enemies", true,
                 "Enemies and other host-controlled things move smoothly instead of stuttering. " +
                 "Takes effect on the next game launch.");

@@ -169,7 +169,7 @@ namespace RevivalSync.Patches
             if (!__runOriginal || !SimManager.Ready || stream.IsWriting) return;
             // vanilla ignores non-host senders; so do we
             if (info.Sender != PhotonNetwork.MasterClient) return;
-            SimManager.BeginHostRead(__instance, out __state);
+            SimManager.BeginHostRead(__instance, info.SentServerTimestamp, out __state);
         }
 
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)

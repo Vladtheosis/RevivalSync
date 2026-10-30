@@ -2,6 +2,18 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.4.0 — Trajectory Matching (experimental, off by default)
+
+- **New option: "Trajectory Matching (experimental)"** in section 1. Thrown items now
+  follow the host's flight path while they are in the air, instead of flying on your
+  screen alone and then settling to where the host has them once they land. Carts you
+  push get the same treatment for real disagreements (say, the host's cart catching on a
+  doorframe) — the ordinary lag trail is left alone, so the cart still feels instant.
+  The trick is comparing the host's view with where *your* item was at the same moment,
+  not where it is now. Anything that bounces off something goes back to the normal sync.
+  Off by default: flip it on and off in the same session and tell us which feels better.
+- Code cleanup: removed two leftover internal timers that no longer did anything.
+
 # 1.3.3
 
 - **Self_Hosted_Photon works on game v0.5.0.** Its region page (the way you host on your

@@ -41,6 +41,9 @@ and the release-state overwrite that makes throws fly clean. Thank you.
   teleport every synced object to exactly where the host has it. The key is rebindable —
   in the REPOConfig menu just type a key name (F8, K, Mouse3, None to disable) — and
   "Auto Resync Seconds" can do it for you on a timer.
+- **Trajectory Matching (experimental, off by default)**: thrown items follow the host's
+  flight path while in the air instead of settling after they land; pushed carts get
+  only their real disagreements corrected, never the normal lag trail.
 - **Smooth everything else**: enemies and other host-driven objects move with snapshot
   interpolation instead of choppy stepping.
 - **No random timeout kicks**: Photon's client-side disconnect timer is neutralized via
