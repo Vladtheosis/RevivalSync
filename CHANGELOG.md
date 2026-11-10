@@ -2,6 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.5.0 — Host Assist (experimental, off by default)
+
+- **New option: "Host Assist (experimental)"**. When the host AND you both run RevivalSync
+  with it switched on, the item or cart you hold is sent straight to the host, and the
+  host's copy follows yours instead of trailing a moment behind. Throws use your own
+  release, so they fly the same on every screen and have nothing to settle afterwards.
+  With a host that does not have it, nothing changes. The host only accepts it from the
+  player actually holding the object, and only within a few metres of its own copy.
+  First version — needs two modded players to test; please report how it feels.
+
 # 1.4.3 — full code review
 
 - Checked against the November game update: everything the mod relies on is still there.

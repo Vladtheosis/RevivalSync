@@ -1023,3 +1023,18 @@ D. Trajectory Matching on by default once 1.4.3 is validated; then retire the bl
 E. Self-propelled valuables: dynamic exemption while active (still latent, unconfirmed).
 PROFILE NOTE: the user's profile holds two copies (Revival-RevivalSync and
 Revival-RevivalSync-1.4.0); BepInEx loads one. The -1.4.0 folder is a leftover local import.
+
+## 1.5.0 - Host Assist (experimental, off by default, UNTESTED - needs two modded machines)
+
+HostAssist.cs. Negotiation: each instance with the option on sets player property "rsync";
+a client streams only when the MASTER has it. Client: every other physics tick while holding
+(non-hinge) RaiseEvent 187 -> MasterClient, unreliable: {viewId,pos,rot,vel,angVel,false};
+on EndLocalGrab the same with release=true, RELIABLE (sent after the game's GrabEndedRPC, so
+the host has already run its own Throw - the release event overwrites pos/rot/vel with ours).
+Host (Tick, the only thing the mod does while hosting): for entries fresher than 0.25s whose
+sender is in playerGrabbing on the host and whose reported pos is within 4m of the host copy:
+grabber.OverridePhysGrabForcesDisable(0.1), velocity = vel + gap*10 (the game's own
+VelocityFollow gain), same for rotation; clamp 30. Kinematic bodies and hinges skipped.
+KNOWN UNKNOWNS: carts - the host's CartSteer also writes velocity for handle grabs and script
+order vs our Tick is unverified (may partly fight); two players holding one object; event
+code 187 assumed free. First things to check in a two-machine test.

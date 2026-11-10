@@ -15,7 +15,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.4.3";
+        public const string PluginVersion = "1.5.0";
 
         internal static ManualLogSource Log;
 
@@ -34,6 +34,7 @@ namespace RevivalSync
         internal static ConfigEntry<bool> SmoothSync;
         internal static ConfigEntry<bool> TrajectoryMatching;
         internal static ConfigEntry<bool> ResetToDefaults;
+        internal static ConfigEntry<bool> HostAssistEnabled;
         private static bool resetting;
         internal static ConfigEntry<bool> Extrapolate;
         internal static ConfigEntry<float> Future;
@@ -187,6 +188,11 @@ namespace RevivalSync
                 "Thrown items and carts you push follow the host's path while they move, instead " +
                 "of flying on your screen alone and then settling where the host has them. " +
                 "Turn it on and off in the same session to compare. Takes effect on your next throw.");
+            HostAssistEnabled = Config.Bind("1. Main", "Host Assist (experimental)", false,
+                "Needs BOTH the host and you to have RevivalSync with this ON. What you hold is " +
+                "sent straight to the host, so the host's copy follows yours instead of trailing " +
+                "behind, and throws fly the same on every screen. Does nothing with a host that " +
+                "does not have it. When you host, it lets your friends' held items do the same.");
             SmoothSync = Config.Bind("1. Main", "Smooth Enemies", true,
                 "Enemies and other host-controlled things move smoothly instead of stuttering. " +
                 "Takes effect on the next game launch.");

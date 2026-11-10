@@ -519,6 +519,8 @@ namespace RevivalSync
             // Trajectory Matching: steer the flight onto the host's path from its first packet
             // instead of flying blind for the grace period (replaces the grace when it starts)
             TrajBeginFlight(st);
+            // Host Assist: hand the host our exact release state (the throw is already applied)
+            HostAssist.ClientSend(st, true);
 
             // covers the unseen-release path (forced drop, knocked out of hand by hitting
             // a player): GrabEnded never ran, so the entry our grab patch added is still
@@ -702,6 +704,7 @@ namespace RevivalSync
                 Plugin.Log.LogInfo("[driver] physics tick loop running");
             }
             SweepHandedBack();
+            HostAssist.HostTick(); // the one thing the mod does while hosting (opt-in)
 
             bool clientInLobby = IsClientInLobby();
             if (clientInLobby != wasClientInLobby)
@@ -846,6 +849,8 @@ namespace RevivalSync
             }
 
             TrajRecordHeld(st);
+            // Host Assist: stream what we hold at the game's own 25Hz (every other tick)
+            if ((tickCounter & 1) == 0) HostAssist.ClientSend(st, false);
 
             if (st.cart != null)
             {
@@ -1592,6 +1597,7 @@ namespace RevivalSync
 
             Plugin.EnsureCapturePatch();
             Compat.Apply();
+            HostAssist.FrameUpdate();
 
             if (!conflictsChecked && Time.unscaledTime > 10f)
             {
