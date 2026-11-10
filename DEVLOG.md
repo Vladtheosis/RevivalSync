@@ -970,3 +970,56 @@ Note: the user's own cfg had Trajectory Matching ON because it was set there for
 (1.4.0) - the shipped default is OFF.
 Release check (zip): versions 1.4.2 everywhere, workflow description == manifest (243
 chars), 5 files, 0 personal-info hits in md/json/dll, Trajectory default false.
+
+## 1.4.3 - full review (2026-11-10) against the Nov 5 game build
+
+GAME (Assembly-CSharp dated 2026-11-05, still ".net3" Photon version): all 70 reflected
+members + patch targets exist; all six authority-transpile targets keep their master checks;
+PhysGrabObject/Cart/Hinge/Grabber within +-2 lines of the Oct 29 build. Static check only -
+no session has run on this build yet.
+NEW in PhotonTransformView: OverrideExtrapolate(maxTime, time=0.2) + VelocityFollow
+(velocityFollowStrength 10) + public receivedServerTimestamp / receivedAny / NetworkPositionGet.
+Only caller: ItemVehicle.NetworkExtrapolateTick (the vehicle and its seated players' tumble
+views). ItemVehicle is 10k lines now, host-simulated with CLIENT-SIDE MESH PREDICTION
+(nonLocalMeshPrediction*) - the devs predict visuals, not physics. No cargo list on vehicles.
+The decode's rigidbody writes are the same set our transpiler filters.
+
+BUGS FOUND AND FIXED
+1. Trajectory: packetFresh set during the hold survived release; EndLocalGrab overwrites
+   hostPos with our release state, so flight tick 1 compared a fake host position with our
+   state ~lag ago -> forward shove of speed x lag. Matches the 1.1-1.2m "max error" on 4 of
+   23 flights in the 1.4.0 session (the hard throws). Cleared in TrajBeginFlight.
+2. Trajectory: velocity corrections were not counted as delivered position correction
+   (corr tracked only direct position writes) -> later packets, describing moments before
+   the correction, re-requested the same error. Now corr += corrV * dt each flight tick.
+3. Compat/Self_Hosted_Photon (1.3.3): our prefix on THEIR static StartPrefix declared
+   `MenuPageRegions __instance`. Harmony special-cases that name: static original => null.
+   Would NRE exactly where the original crashed. Now `__0`. RULE: when hooking another
+   mod's static patch method, take its parameters by index, never by a Harmony-reserved name.
+4. Smoothing vs the game's new vehicle prediction: our Update postfix MovePosition()s every
+   non-simulated view onto an interpolated past snapshot, undoing VelocityFollow. Skip (and
+   drop history for) any view whose overrideExtrapolateTimer > 0 (optional accessor).
+
+LOOKED AT, DELIBERATELY NOT CHANGED
+- HostStalled can false-positive since v0.5.0 when the host is alive but everything (host
+  avatar included) is quiet for 2s: shadow sync pauses until any host packet arrives. The
+  obvious refinement ("only stalled for objects last reported moving") would bring back the
+  frozen-host pinning the guard exists for. No log evidence of harm - left alone.
+- Suppressed views do not tick throttleDisableTimer / overrideExtrapolateTimer: both are
+  only read on the host or for vehicles/tumbles, which we never suppress.
+- Client-side PhotonTransformView.Teleport callers are master-gated or cosmetic; host
+  teleports arrive as a revision bump and are handled.
+- Per-tick cost: O(objects) of cheap checks; nothing worth optimising. Possible later
+  tidy-up: split SimManager.cs (1660 lines) into Held / Shadow / Hinge / Cart partials.
+
+OPEN PROPOSALS (not built)
+A. HOST ASSIST: when the host also runs RevivalSync, the holder streams its held object's
+   state to the host (custom event), the host steers its copy to it (bounded), skips its own
+   Throw for that release and takes the client's release velocity. Removes the client+host
+   loop for holds and throws entirely; falls back to today's behaviour on a vanilla host.
+B. Instant A/B hotkey (prediction on/off mid-level) + optional on-screen ping/lag readout.
+C. Client send-rate 25 -> 50 as an option (~10-15ms of the loop).
+D. Trajectory Matching on by default once 1.4.3 is validated; then retire the blind grace.
+E. Self-propelled valuables: dynamic exemption while active (still latent, unconfirmed).
+PROFILE NOTE: the user's profile holds two copies (Revival-RevivalSync and
+Revival-RevivalSync-1.4.0); BepInEx loads one. The -1.4.0 folder is a leftover local import.

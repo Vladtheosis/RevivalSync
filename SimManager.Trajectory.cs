@@ -185,6 +185,12 @@ namespace RevivalSync
             tr.remaining = tr.remainingV = Vector3.zero;
             tr.packets = 0;
             tr.errSum = tr.errMax = 0f;
+            // A packet that arrived DURING the hold left this flag set (only carts consume it
+            // while held), and EndLocalGrab has just overwritten hostPos with our own release
+            // state. Left on, the first flight tick compared that fake "host" position with
+            // our position ~0.2s ago and shoved the object forward by speed x lag — the 1m+
+            // "max error" spikes on hard throws in the first 1.4.0 session.
+            tr.packetFresh = false;
             // tracking replaces the blind throw grace
             st.postThrowTimer = 0f;
             st.postThrowRamp = 0f;
@@ -217,6 +223,11 @@ namespace RevivalSync
             if (tr.flightAge > 6f) { TrajEnd(st, "timeout"); return false; }
             if (st.hostKinematic) { TrajEnd(st, "taken on host"); return false; }
 
+            // A velocity correction keeps moving the object every tick after it is made. That
+            // displacement is a correction already delivered, so it belongs in the running
+            // total — otherwise later packets (which still describe moments BEFORE it) ask for
+            // the same position error again and the flight overshoots the host's path.
+            tr.corr += tr.corrV * dt;
             tr.Record(st.rb);
 
             if (tr.packetFresh)

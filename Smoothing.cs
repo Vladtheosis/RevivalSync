@@ -58,9 +58,20 @@ namespace RevivalSync
         private static AccessTools.FieldRef<PhotonTransformView, bool> teleportField;
         private static AccessTools.FieldRef<PhotonTransformView, bool> sleepingField;
         private static AccessTools.FieldRef<PhysGrabHinge, bool> hingeBroken;
+        // > 0 while the game itself is predicting this view (vehicles, since the Nov 2026
+        // build). Optional: older builds have no such field, and then nothing predicts.
+        private static AccessTools.FieldRef<PhotonTransformView, float> gameExtrapolateTimer;
 
         internal static bool InitAccessors()
         {
+            try
+            {
+                gameExtrapolateTimer = AccessTools.FieldRefAccess<PhotonTransformView, float>("overrideExtrapolateTimer");
+            }
+            catch
+            {
+                gameExtrapolateTimer = null;
+            }
             try
             {
                 recvPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("receivedPosition");
@@ -93,6 +104,16 @@ namespace RevivalSync
             {
                 // the simulation owns this object; drop our history so we rebuild fresh
                 // if it is ever handed back (stale history = objects teleporting backwards)
+                states.Remove(ptv);
+                return false;
+            }
+            // The game is predicting this one itself: other players' vehicles and their seated
+            // bodies are steered by velocity toward an extrapolated target (ItemVehicle
+            // .NetworkExtrapolateTick -> OverrideExtrapolate -> VelocityFollow). Our
+            // MovePosition onto an interpolated PAST position each frame would drag it back
+            // against that — stand down and drop the history.
+            if (gameExtrapolateTimer != null && gameExtrapolateTimer(ptv) > 0f)
+            {
                 states.Remove(ptv);
                 return false;
             }

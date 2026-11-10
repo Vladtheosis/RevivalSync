@@ -2,6 +2,20 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.4.3 — full code review
+
+- Checked against the November game update: everything the mod relies on is still there.
+- **Vehicles driven by other players no longer get dragged around by "Smooth Enemies".**
+  The game now predicts those vehicles itself, and the mod's smoothing was pulling them
+  back to an older position every frame. The mod now leaves anything the game is
+  predicting alone.
+- **Trajectory Matching: no more forward lurch on hard throws.** The first steering step
+  after you let go was comparing against stale data and shoved the item forward (by about
+  a metre's worth on a hard throw) before correcting itself. It also no longer
+  overshoots the host's path after a speed correction.
+- **Self_Hosted_Photon fix actually works now.** The 1.3.3 fix for its region page had a
+  mistake that made it crash in the same place; corrected.
+
 # 1.4.2
 
 - **New: "Reset All Settings To Default"** (section 3. Debug). Turn it on and every

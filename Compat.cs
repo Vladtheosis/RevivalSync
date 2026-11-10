@@ -61,11 +61,15 @@ namespace RevivalSync
             Plugin.Log.LogInfo("[compat] Self_Hosted_Photon: region page updated for game v0.5.0 (new Steam auth call).");
         }
 
-        private static bool SelfHostStartPrefix(MenuPageRegions __instance, ref bool __result)
+        // __0, not __instance: the method we hook is the other mod's STATIC prefix, whose first
+        // parameter merely happens to be named "__instance". To Harmony that name always means
+        // "the patched method's own instance", which for a static method is null (1.3.3 bug).
+        private static bool SelfHostStartPrefix(MenuPageRegions __0, ref bool __result)
         {
             // disabled in its own config: its prefix lets the game's page run; so do we
             if (selfHostEnabled != null && !selfHostEnabled.Value) return true;
-            __instance.StartCoroutine(CustomHostRegionPage(__instance));
+            if (__0 == null) return true;
+            __0.StartCoroutine(CustomHostRegionPage(__0));
             __result = false; // skip the game's own region page, like the mod intends
             return false;
         }
