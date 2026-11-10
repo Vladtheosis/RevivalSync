@@ -40,6 +40,7 @@ namespace RevivalSync
             public float noSnapTimer;       // recently thrown: landings glide to the host spot, never teleport
             public float hingeSyncPause;    // door we just pushed/released: settle window before host truth resumes
             public float hingeOpenedAt = -999f; // when we last opened this door ahead of the host
+            public float assistTail;        // Host Assist: keep streaming briefly after letting go
             public bool droneExempt;        // magnet drone drives this object: vanilla sync until released
             public float farTimer;          // shadowed object stuck far from host: convergence backstop
             public ItemDrone droneSelf;     // this object IS a drone: host-owned only while flying
@@ -472,7 +473,9 @@ namespace RevivalSync
             st.localGrab = true;
             st.postThrowTimer = 0f;
             st.desyncTimer = 0f;
+            TrajEnd(st, "grabbed again"); // logs a flight that was still being tracked
             st.traj?.Reset(); // a new hold starts a new path
+            st.assistTail = 0f;
             pgoIsMaster(pgo) = true;
             EnsureDynamic(st);
         }
@@ -520,8 +523,10 @@ namespace RevivalSync
             // Trajectory Matching: steer the flight onto the host's path from its first packet
             // instead of flying blind for the grace period (replaces the grace when it starts)
             TrajBeginFlight(st);
-            // Host Assist: hand the host our exact release state (the throw is already applied)
+            // Host Assist: tell the host we let go (the throw is already applied), then keep
+            // streaming for a moment so its copy glides onto ours instead of jumping
             HostAssist.ClientSend(st, true);
+            st.assistTail = HostAssist.Active && !st.isHinge ? HostAssist.Tail : 0f;
 
             // covers the unseen-release path (forced drop, knocked out of hand by hitting
             // a player): GrabEnded never ran, so the entry our grab patch added is still
@@ -1085,6 +1090,12 @@ namespace RevivalSync
 
             // deactivated objects sit kinematic in limbo (extracted/destroyed) — hands off
             if (!pgoIsActive(st.pgo)) return;
+
+            if (st.assistTail > 0f)
+            {
+                st.assistTail -= Time.fixedDeltaTime;
+                if ((tickCounter & 1) == 0) HostAssist.ClientSend(st, false);
+            }
 
             // CART CARGO — the original NetworkingReworked's model (credit: readthisifbad).
             // While the cart is in use, cargo gets NO sync of any kind: it simply rides in

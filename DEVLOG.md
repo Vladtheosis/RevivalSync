@@ -1052,3 +1052,21 @@ FIX: postfix OpenImpulse/CloseImpulse -> set `closed` locally for simulated hing
 CloseImpulseRPC -> ignore a stale host close while we hold/push and opened < 0.6s ago.
 Self-heals if the host never opens: angle sync brings it back, local logic closes it again.
 REMEMBER: HingeImpulsePredictPatch is in patchTypes (the two-list rule).
+
+## 1.5.2 - Host Assist: carts + release tail
+
+1.5.0 session (client log): held cart drift 1.1-1.2m at 4.8 m/s = 0.24s x speed, IDENTICAL to
+no assist. Cause: host PhysGrabCart.CartSteer (handle grabs) does linearVelocity =
+MoveTowards(...) + ClampMagnitude every tick toward a follow point behind the HOST's (late)
+view of the player - it overwrote our steering. Fix: postfix CartSteer -> HostAssist
+.AfterCartSteer re-applies the holder's state (HostAssistCartPatch, in patchTypes).
+Release: 1.5.0 wrote rb.position on the host (a cart 1m behind jumped, through its cargo),
+and the client's Trajectory Matching then steered against a host that used a different lag
+(0.24s held vs TrajLag 0.131) = the "cart corrects when I suddenly let go". Now: no position
+write; the release event only stamps releasedAt; the client keeps streaming for Tail=0.4s
+(SimState.assistTail, sent from TickShadowInner) and the host keeps following the ex-holder
+for Tail+0.2s while nobody else grabs it. Client: with HostAssist.Active, TrajBeginFlight and
+TrajHeldCart stand down (the host follows US - steering toward it chases our own echo); the
+plain throw grace applies. Also: a tracked flight ended by a re-grab now logs ("grabbed again").
+EXPECT in the next client log if it works: held cart drift ~ speed x (ping + ~40ms) i.e.
+~0.6m at 4.8 m/s on an 85ms ping, instead of 1.2m.

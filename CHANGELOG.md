@@ -2,6 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.5.2 — Host Assist: carts
+
+- **Host Assist now actually works for carts.** The host's own cart steering was
+  overwriting it every tick, so a pushed cart still ran about a metre ahead of the host's
+  copy at sprint speed. The host now applies your cart's state after its own steering.
+- **Letting go no longer makes the cart (or a thrown item) correct itself.** The host's
+  copy used to jump to your position on release. Now your game keeps sending for a short
+  moment after you let go and the host glides onto it, while your own copy is left alone.
+- Both players need this version for Host Assist.
+
 # 1.5.1
 
 - **Shut doors now open the moment you pull them.** A closed door was held shut on your

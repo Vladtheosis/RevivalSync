@@ -404,6 +404,19 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
+    /// Host Assist, host side: the game's cart steering overwrites the cart's velocity every
+    /// tick, so the holder's streamed state is re-applied right after it.
+    /// </summary>
+    [HarmonyPatch(typeof(PhysGrabCart), "CartSteer")]
+    internal static class HostAssistCartPatch
+    {
+        private static void Postfix(PhysGrabCart __instance)
+        {
+            if (SimManager.Ready) HostAssist.AfterCartSteer(__instance);
+        }
+    }
+
+    /// <summary>
     /// Instant door opening. The hinge logic we run locally calls OpenImpulse / CloseImpulse
     /// when it decides a door opens or shuts, but on a client those only do something on
     /// the host — and the "closed" flag they control is what pins a shut door in place.

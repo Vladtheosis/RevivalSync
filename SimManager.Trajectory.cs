@@ -176,6 +176,10 @@ namespace RevivalSync
         private static void TrajBeginFlight(SimState st)
         {
             if (!TrajOn(st) || st.traj == null || st.traj.count < 2) return;
+            // Host Assist: the host is following OUR copy through the release, so steering
+            // ours toward the host would chase our own echo. The ordinary throw grace (pure
+            // local physics) is exactly right here; normal sync resumes after it.
+            if (HostAssist.Active) return;
             Trajectory tr = st.traj;
             tr.flying = true;
             tr.flightAge = 0f;
@@ -288,6 +292,7 @@ namespace RevivalSync
         {
             Trajectory tr = st.traj;
             if (tr == null || st.cart == null || !TrajOn(st)) return;
+            if (HostAssist.Active) return; // the host follows us: nothing here to nudge toward
             if (tr.packetFresh)
             {
                 tr.packetFresh = false;

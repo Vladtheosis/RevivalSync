@@ -36,7 +36,16 @@ namespace RevivalSync
             public Vector3 pos, vel, angVel;
             public Quaternion rot;
             public float time;
+            public float releasedAt = -999f; // holder let go: keep following its stream briefly
         }
+
+        /// <summary>How long after letting go the holder keeps streaming and the host keeps
+        /// following — the release then needs no jump on the host and no settle on the client.</summary>
+        internal const float Tail = 0.4f;
+
+        /// <summary>Client: the host is following what we hold, so WE are the reference —
+        /// nothing on our side should steer a just-released object toward the host.</summary>
+        internal static bool Active => On && hostSupports;
 
         private static readonly Dictionary<int, Entry> entries = new Dictionary<int, Entry>();
         private static readonly List<int> dead = new List<int>();
@@ -102,21 +111,17 @@ namespace RevivalSync
 
                 if (release)
                 {
-                    // arrives right after that player's GrabEnded: replace the throw the host
-                    // just computed from ITS view of the hand with the one the player made
-                    if (entries.TryGetValue(viewId, out Entry held) && held.actor == ev.Sender
-                        && Time.unscaledTime - held.time < 1f && held.pgo != null && held.pgo.rb != null)
-                    {
-                        Rigidbody rb = held.pgo.rb;
-                        if (!rb.isKinematic && (pos - rb.position).sqrMagnitude < MaxGap * MaxGap)
-                        {
-                            rb.position = pos;
-                            rb.rotation = rot;
-                            rb.velocity = vel;
-                            rb.angularVelocity = angVel;
-                        }
-                    }
-                    entries.Remove(viewId);
+                    // Arrives right after that player's GrabEnded. No teleport (1.5.0 wrote the
+                    // position: a cart jumped a metre on the host, through its own cargo): just
+                    // mark it, and keep following the holder's stream for the tail. That also
+                    // replaces the throw the host computed from ITS late view of the hand.
+                    if (!entries.TryGetValue(viewId, out Entry held) || held.actor != ev.Sender) return;
+                    held.releasedAt = Time.unscaledTime;
+                    held.pos = pos;
+                    held.rot = rot;
+                    held.vel = vel;
+                    held.angVel = angVel;
+                    held.time = Time.unscaledTime;
                     return;
                 }
 
@@ -175,27 +180,55 @@ namespace RevivalSync
                     dead.Add(kv.Key);
                     continue;
                 }
-                if (Time.unscaledTime - e.time > 0.25f) continue; // stream paused: host physics alone
-                PhysGrabber grabber = GrabberOf(e.pgo, e.actor);
-                if (grabber == null) continue;                      // only the player holding it may steer it
-                Rigidbody rb = e.pgo.rb;
-                if (rb.isKinematic) continue;
-                Vector3 gap = e.pos - rb.position;
-                if (gap.sqrMagnitude > MaxGap * MaxGap) continue;   // snagged or bogus: host physics wins
-
-                // our steering replaces the host's lagged copy of that player's grab pull
-                grabber.OverridePhysGrabForcesDisable(0.1f);
-                rb.velocity = Vector3.ClampMagnitude(e.vel + gap * Follow, MaxSpeed);
-                (e.rot * Quaternion.Inverse(rb.rotation)).ToAngleAxis(out float angle, out Vector3 axis);
-                if (angle > 180f) angle -= 360f;
-                Vector3 turn = Vector3.zero;
-                if (Mathf.Abs(angle) > 0.01f && !float.IsNaN(axis.x) && !float.IsInfinity(axis.x))
-                {
-                    turn = axis * (angle * Mathf.Deg2Rad * Follow);
-                }
-                rb.angularVelocity = Vector3.ClampMagnitude(e.angVel + turn, MaxSpeed);
+                Steer(e);
             }
             foreach (int id in dead) entries.Remove(id);
+        }
+
+        /// <summary>The host's CartSteer rewrites a handle-held cart's velocity every tick
+        /// toward a point behind where the HOST sees the player (always late) — it simply
+        /// overwrote the assist in 1.5.0 (held carts still trailed ~0.24s x speed). Called
+        /// right after it, so the holder's own state has the last word.</summary>
+        internal static void AfterCartSteer(PhysGrabCart cart)
+        {
+            if (entries.Count == 0 || cart == null || !On || !PhotonNetwork.IsMasterClient) return;
+            foreach (Entry e in entries.Values)
+            {
+                if (e.pgo != null && e.pgo.gameObject == cart.gameObject)
+                {
+                    Steer(e);
+                    return;
+                }
+            }
+        }
+
+        private static void Steer(Entry e)
+        {
+            float now = Time.unscaledTime;
+            if (now - e.time > 0.25f) return;                    // stream paused: host physics alone
+            Rigidbody rb = e.pgo.rb;
+            if (rb == null || rb.isKinematic) return;
+            PhysGrabber grabber = GrabberOf(e.pgo, e.actor);
+            if (grabber == null)
+            {
+                // only the holder may steer it — or, for a moment after letting go, the player
+                // who just held it, as long as nobody else has picked it up
+                if (now - e.releasedAt > Tail + 0.2f || e.pgo.playerGrabbing.Count > 0) return;
+            }
+            Vector3 gap = e.pos - rb.position;
+            if (gap.sqrMagnitude > MaxGap * MaxGap) return;      // snagged or bogus: host physics wins
+
+            // our steering replaces the host's lagged copy of that player's grab pull
+            if (grabber != null) grabber.OverridePhysGrabForcesDisable(0.1f);
+            rb.velocity = Vector3.ClampMagnitude(e.vel + gap * Follow, MaxSpeed);
+            (e.rot * Quaternion.Inverse(rb.rotation)).ToAngleAxis(out float angle, out Vector3 axis);
+            if (angle > 180f) angle -= 360f;
+            Vector3 turn = Vector3.zero;
+            if (Mathf.Abs(angle) > 0.01f && !float.IsNaN(axis.x) && !float.IsInfinity(axis.x))
+            {
+                turn = axis * (angle * Mathf.Deg2Rad * Follow);
+            }
+            rb.angularVelocity = Vector3.ClampMagnitude(e.angVel + turn, MaxSpeed);
         }
     }
 }
