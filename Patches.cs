@@ -404,6 +404,37 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
+    /// Instant door opening. The hinge logic we run locally calls OpenImpulse / CloseImpulse
+    /// when it decides a door opens or shuts, but on a client those only do something on
+    /// the host — and the "closed" flag they control is what pins a shut door in place.
+    /// Apply the flag locally right away; the host's RPC still arrives and stays the authority.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class HingeImpulsePredictPatch
+    {
+        [HarmonyPatch(typeof(PhysGrabHinge), "OpenImpulse")]
+        [HarmonyPostfix]
+        private static void Opened(PhysGrabHinge __instance)
+        {
+            if (SimManager.Ready) SimManager.PredictHingeClosed(__instance, false);
+        }
+
+        [HarmonyPatch(typeof(PhysGrabHinge), "CloseImpulse")]
+        [HarmonyPostfix]
+        private static void Closed(PhysGrabHinge __instance)
+        {
+            if (SimManager.Ready) SimManager.PredictHingeClosed(__instance, true);
+        }
+
+        [HarmonyPatch(typeof(PhysGrabHinge), "CloseImpulseRPC")]
+        [HarmonyPostfix]
+        private static void HostClosed(PhysGrabHinge __instance)
+        {
+            if (SimManager.Ready) SimManager.HostHingeClosed(__instance);
+        }
+    }
+
+    /// <summary>
     /// The BepInEx plugin component's Update/FixedUpdate never ran before game v0.5.0 (they
     /// do now), so the driver loops ride on game code that provably updates: GameDirector
     /// (every frame) and PlayerController (every physics step, exists whenever gameplay

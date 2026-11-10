@@ -1038,3 +1038,17 @@ VelocityFollow gain), same for rotation; clamp 30. Kinematic bodies and hinges s
 KNOWN UNKNOWNS: carts - the host's CartSteer also writes velocity for handle grabs and script
 order vs our Tick is unverified (may partly fight); two players holding one object; event
 code 187 assumed free. First things to check in a two-machine test.
+
+## 1.5.1 - doors: predict PhysGrabHinge.closed (first two-modded-machine session, 2026-11-10)
+
+Session: client on a host running 1.5.0 + Host Assist ("[assist] the host runs..." logged).
+Trajectory after the 1.4.3 fixes: error avg 0.00-0.05m, max 0.17m (was up to 1.2m). User:
+"doors were buggy, at least the first doors" - 7 tugs of 0.2-1.0s on one Wizard Door Double.
+ROOT CAUSE (never handled since doors went local in 1.1.x): `closed` is set only by the host's
+Open/CloseImpulseRPC (MasterOnlyRPC). While closed, FixedUpdate pins the door to restPosition
+and zeroes its velocity every tick; the OpenImpulse() our transpiled logic calls is a no-op on
+a client. So a shut door could not move locally until the host's reply (~one loop).
+FIX: postfix OpenImpulse/CloseImpulse -> set `closed` locally for simulated hinges; postfix
+CloseImpulseRPC -> ignore a stale host close while we hold/push and opened < 0.6s ago.
+Self-heals if the host never opens: angle sync brings it back, local logic closes it again.
+REMEMBER: HingeImpulsePredictPatch is in patchTypes (the two-list rule).

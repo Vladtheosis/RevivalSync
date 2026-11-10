@@ -2,6 +2,13 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.5.1
+
+- **Shut doors now open the moment you pull them.** A closed door was held shut on your
+  screen until the host confirmed it had opened — about a quarter of a second — so quick
+  tugs did nothing and the door then popped open late. The mod now opens (and shuts) it
+  on your screen straight away; the host still has the final say.
+
 # 1.5.0 — Host Assist (experimental, off by default)
 
 - **New option: "Host Assist (experimental)"**. When the host AND you both run RevivalSync

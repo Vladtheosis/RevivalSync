@@ -39,6 +39,7 @@ namespace RevivalSync
             public float postThrowRamp;     // after the grace: fade corrections back in (no brake)
             public float noSnapTimer;       // recently thrown: landings glide to the host spot, never teleport
             public float hingeSyncPause;    // door we just pushed/released: settle window before host truth resumes
+            public float hingeOpenedAt = -999f; // when we last opened this door ahead of the host
             public bool droneExempt;        // magnet drone drives this object: vanilla sync until released
             public float farTimer;          // shadowed object stuck far from host: convergence backstop
             public ItemDrone droneSelf;     // this object IS a drone: host-owned only while flying
@@ -1309,6 +1310,53 @@ namespace RevivalSync
             if (localPush)
             {
                 st.localPushTimer = 0.75f;
+            }
+        }
+
+        // PhysGrabHinge.closed: while true, the hinge logic pins the door to its rest pose every
+        // tick. Only the host's Open/CloseImpulseRPC ever change it — the local OpenImpulse()
+        // our transpiled hinge logic calls is a no-op on a client — so a shut door stayed
+        // pinned for a full round trip after you pulled it ("first doors are buggy": quick
+        // tugs ended before the host's reply arrived).
+        private static AccessTools.FieldRef<PhysGrabHinge, bool> hingeClosed;
+        private static bool hingeClosedTried;
+
+        private static SimState HingeState(PhysGrabHinge hinge)
+        {
+            if (!hingeClosedTried)
+            {
+                hingeClosedTried = true;
+                try { hingeClosed = AccessTools.FieldRefAccess<PhysGrabHinge, bool>("closed"); }
+                catch { hingeClosed = null; }
+            }
+            if (hingeClosed == null || hinge == null || !IsClientInLobby()) return null;
+            PhysGrabObject pgo = hinge.GetComponent<PhysGrabObject>();
+            return pgo != null && states.TryGetValue(pgo, out SimState st) && st.isHinge ? st : null;
+        }
+
+        /// <summary>Our local hinge logic decided the door opens/closes: apply it now. The
+        /// host's own RPC follows and stays the authority.</summary>
+        internal static void PredictHingeClosed(PhysGrabHinge hinge, bool closed)
+        {
+            SimState st = HingeState(hinge);
+            if (st == null || hingeClosed(hinge) == closed) return;
+            hingeClosed(hinge) = closed;
+            if (!closed) st.hingeOpenedAt = Time.unscaledTime;
+            if (Plugin.VerboseLogging.Value)
+            {
+                Plugin.Log.LogInfo($"[hinge] {st.pgo.name}: {(closed ? "closed" : "opened")} locally (ahead of the host)");
+            }
+        }
+
+        /// <summary>The host says "closed". If we are pulling the door open right now and
+        /// opened it a moment ago, that message is about an EARLIER close — keep it open.</summary>
+        internal static void HostHingeClosed(PhysGrabHinge hinge)
+        {
+            SimState st = HingeState(hinge);
+            if (st == null) return;
+            if ((st.localGrab || st.localPushTimer > 0f) && Time.unscaledTime - st.hingeOpenedAt < 0.6f)
+            {
+                hingeClosed(hinge) = false;
             }
         }
 
