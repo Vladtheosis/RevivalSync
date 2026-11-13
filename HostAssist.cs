@@ -37,6 +37,7 @@ namespace RevivalSync
             public Quaternion rot;
             public float time;
             public float releasedAt = -999f; // holder let go: keep following its stream briefly
+            public bool hostDriven;          // scripted object streamed by an older client: never steered
         }
 
         /// <summary>How long after letting go the holder keeps streaming and the host keeps
@@ -46,6 +47,46 @@ namespace RevivalSync
         /// <summary>Client: the host is following what we hold, so WE are the reference —
         /// nothing on our side should steer a just-released object toward the host.</summary>
         internal static bool Active => On && hostSupports;
+
+        /// <summary>Client: is THIS object streamed to the host? Never for a host-driven one
+        /// (see <see cref="HostDrivenReason"/>) — those keep the ordinary non-assist behaviour.</summary>
+        internal static bool For(SimManager.SimState st) => Active && st != null && !st.hostDriven;
+
+        // components every valuable carries (or level/UI helpers) that are not behaviour scripts
+        private static readonly HashSet<string> plainTypes = new HashSet<string>
+        {
+            "ValuableObject", "NotValuableObject", "ValuablePropSwitch", "ValuableExtracting",
+            "ValuableDiscover", "ValuableDiscoverCustom", "ValuableDiscoverGraphic",
+            "ValuableVolume", "ValuableVolumeDebugDisplay",
+        };
+
+        /// <summary>
+        /// Why the host has to keep driving this object itself, or null if it is plain physics
+        /// (carts, ordinary loot, props). The host's Steer replaces EVERYTHING the host does
+        /// to a held object: it switches off the host's grab forces (which also carry the
+        /// TurnXYZ straightening item scripts ask for) and overwrites both velocities every
+        /// tick. Fine for plain objects. For a scripted one it erases, for every player:
+        ///  - items: recoil, melee swing forces and the hold orientation — and a gadget whose
+        ///    rotation we mirror FROM the host would chase its own echo;
+        ///  - trap/scripted valuables: the host-only jolts, shakes and pulls (scream doll,
+        ///    phone, ice saw, baby head...) that are the whole point of the trap.
+        /// Those stay on the non-assist path, which is how they behave on a vanilla host.
+        /// Errs toward "host-driven": a wrong yes only costs the assist on that object.
+        /// </summary>
+        internal static string HostDrivenReason(PhysGrabObject pgo, bool isCart)
+        {
+            if (pgo == null || isCart) return null;
+            if (pgo.GetComponentInParent<ItemAttributes>() != null) return "item";
+            foreach (MonoBehaviour c in pgo.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (c == null) continue;
+                string n = c.GetType().Name;
+                if (c is Trap) return n;
+                if (plainTypes.Contains(n)) continue;
+                if (n.Contains("Valuable") || n.StartsWith("MuseumProp")) return n;
+            }
+            return null;
+        }
 
         private static readonly Dictionary<int, Entry> entries = new Dictionary<int, Entry>();
         private static readonly List<int> dead = new List<int>();
@@ -89,6 +130,7 @@ namespace RevivalSync
         internal static void ClientSend(SimManager.SimState st, bool release)
         {
             if (!On || !hostSupports || st == null || st.rb == null || st.viewId == 0 || st.isHinge) return;
+            if (st.hostDriven) return; // the host runs logic on it that we do not: it must not follow us
             object[] data = { st.viewId, st.rb.position, st.rb.rotation, st.rb.velocity, st.rb.angularVelocity, release };
             // the release must arrive (it carries the throw); the stream may drop packets
             PhotonNetwork.RaiseEvent(EventCode, data, toHost, release ? SendOptions.SendReliable : SendOptions.SendUnreliable);
@@ -130,7 +172,9 @@ namespace RevivalSync
                     PhotonView view = PhotonView.Find(viewId);
                     PhysGrabObject pgo = view != null ? view.GetComponent<PhysGrabObject>() : null;
                     if (pgo == null || pgo.rb == null) return;
-                    e = new Entry { pgo = pgo };
+                    // a 1.5.3+ client never streams these; this covers an older one
+                    bool isCart = pgo.GetComponent<PhysGrabCart>() != null;
+                    e = new Entry { pgo = pgo, hostDriven = HostDrivenReason(pgo, isCart) != null };
                     entries[viewId] = e;
                     if (!announcedHost)
                     {
@@ -205,6 +249,7 @@ namespace RevivalSync
         private static void Steer(Entry e)
         {
             float now = Time.unscaledTime;
+            if (e.hostDriven) return;                            // scripted: the host's own logic drives it
             if (now - e.time > 0.25f) return;                    // stream paused: host physics alone
             Rigidbody rb = e.pgo.rb;
             if (rb == null || rb.isKinematic) return;

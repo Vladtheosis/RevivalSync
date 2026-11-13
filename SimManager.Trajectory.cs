@@ -178,8 +178,9 @@ namespace RevivalSync
             if (!TrajOn(st) || st.traj == null || st.traj.count < 2) return;
             // Host Assist: the host is following OUR copy through the release, so steering
             // ours toward the host would chase our own echo. The ordinary throw grace (pure
-            // local physics) is exactly right here; normal sync resumes after it.
-            if (HostAssist.Active) return;
+            // local physics) is exactly right here; normal sync resumes after it. (Not for a
+            // host-driven object: it is not streamed, so it is tracked like on any other host.)
+            if (HostAssist.For(st)) return;
             Trajectory tr = st.traj;
             tr.flying = true;
             tr.flightAge = 0f;
@@ -292,7 +293,7 @@ namespace RevivalSync
         {
             Trajectory tr = st.traj;
             if (tr == null || st.cart == null || !TrajOn(st)) return;
-            if (HostAssist.Active) return; // the host follows us: nothing here to nudge toward
+            if (HostAssist.For(st)) return; // the host follows us: nothing here to nudge toward
             if (tr.packetFresh)
             {
                 tr.packetFresh = false;

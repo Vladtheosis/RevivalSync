@@ -41,6 +41,8 @@ namespace RevivalSync
             public float hingeSyncPause;    // door we just pushed/released: settle window before host truth resumes
             public float hingeOpenedAt = -999f; // when we last opened this door ahead of the host
             public float assistTail;        // Host Assist: keep streaming briefly after letting go
+            public bool hostDriven;         // Host Assist: scripted object, the host must keep driving it
+            public string hostDrivenWhy;    // (the script that makes it so, for the log)
             public bool droneExempt;        // magnet drone drives this object: vanilla sync until released
             public float farTimer;          // shadowed object stuck far from host: convergence backstop
             public ItemDrone droneSelf;     // this object IS a drone: host-owned only while flying
@@ -433,6 +435,11 @@ namespace RevivalSync
                     st.droneToggle = pgo.GetComponentInChildren<ItemToggle>(true);
                 }
             }
+            if (!st.isHinge)
+            {
+                st.hostDrivenWhy = HostAssist.HostDrivenReason(pgo, st.cart != null);
+                st.hostDriven = st.hostDrivenWhy != null;
+            }
 
             // seed from whatever the transform view last received, so we have a sane
             // target even before our own capture sees its first packet
@@ -468,6 +475,12 @@ namespace RevivalSync
             if (!st.localGrab && Plugin.VerboseLogging.Value)
             {
                 Plugin.Log.LogInfo($"Local grab authority: {pgo.name}");
+                if (HostAssist.Active && !st.isHinge)
+                {
+                    Plugin.Log.LogInfo(st.hostDriven
+                        ? $"[assist] {pgo.name}: not streamed — the host drives it ({st.hostDrivenWhy})"
+                        : $"[assist] {pgo.name}: streamed to the host");
+                }
             }
 
             st.localGrab = true;
@@ -526,7 +539,7 @@ namespace RevivalSync
             // Host Assist: tell the host we let go (the throw is already applied), then keep
             // streaming for a moment so its copy glides onto ours instead of jumping
             HostAssist.ClientSend(st, true);
-            st.assistTail = HostAssist.Active && !st.isHinge ? HostAssist.Tail : 0f;
+            st.assistTail = HostAssist.For(st) && !st.isHinge ? HostAssist.Tail : 0f;
 
             // covers the unseen-release path (forced drop, knocked out of hand by hitting
             // a player): GrabEnded never ran, so the entry our grab patch added is still

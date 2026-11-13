@@ -32,19 +32,14 @@ not on the exemption list in `SimManager.CanSimulate`.
 
 ---
 
-## 4. THE LATENT CLASS: self-propelled valuables with host-only motion
+## 4. Scripted objects: host-only behaviour while held
 
-This is the cart-cannon bug class, unresolved. A large family of items applies its own
-motion forces **inside a master gate**, so a client never runs them.
+**Rewritten 2026-11-13 (1.5.3) after re-reading the game code (Nov 5 2026 build). The
+July version of this section predicted "hold a flying broom or plane and it goes dead in
+your hands". That prediction was wrong; the corrected picture is below.**
 
-Confirmed by reading the code:
-
-- `ValuablePlane.cs:115` — `if (!SemiFunc.IsMasterClientOrSingleplayer()) return;` then all
-  flight forces (324, 355–356, 361, 391, 396)
-- `WizardBroomValuable.cs:80` — gate, then forces at 141, 150, 157–158, 173, 178
-- `ValuableCubeBall.cs:43/63/84` — gates, then bounce impulses at 49–50, 69–70, 90
-
-Full candidate list (master gate **and** rigidbody writes in the same file):
+A large family of items and valuables runs part of its behaviour **inside a master gate**,
+so a client never runs it. The scan (master gate **and** rigidbody writes in one file):
 
 ```
 ValuablePlane          WizardBroomValuable   ValuableCubeBall     ValuableArcticSnowBike
@@ -58,30 +53,72 @@ ItemGrenade            ItemGrenadeExplosive  ItemHealthPack       ItemEquippable
 EnemyValuableThrower
 ```
 
-### When it actually breaks — only two conditions
+The scan is a list of files to read, not a list of bugs — most of these gate something
+harmless. The valuables are bigger than this list: 32 classes derive from `Trap` and about
+40 more `Valuable*` / `*Valuable` scripts exist.
+
+### Where host-only behaviour can be lost — two conditions
 
 A shadowed object is continuously passive-synced toward the host pose, so host-only motion
-still *arrives*; it just isn't simulated locally. The failure needs the mod to be
-**withholding host data**, which happens in exactly two places:
+still *arrives*; it just isn't simulated locally. It is only lost where the mod
+**withholds host data**, which happens in exactly two places:
 
 1. **`TickHeld`** — while YOU hold it, the network does not touch it at all (NR rule).
 2. **Riding cargo** — while it rides in a cart in use, it gets no sync (NR rule).
 
-Predicted symptom: *hold a flying broom or plane and it goes dead in your hands while
-everyone else sees it fly* — the exact fingerprint of the limp cart cannon.
+### What the self-propelled ones really do (read, not guessed)
 
-`ItemGun` / `ItemMelee` appear in the scan but are **already solved differently**: their
-hold orientation is computed locally from their own tuning fields (1.1.8 / 1.2.0), so they
-do not need the host's version.
+None of the three originally "confirmed" examples propels itself in either condition:
 
-### Recommended fix pattern (if confirmed)
+- `ValuablePlane` — the flight forces are in `FixedUpdate` → `StateMachine`, which is **not
+  master-gated**; the state arrives by `UpdateStateRPC`, so a simulating client flies it
+  locally too. Line 115 only gates `ServerSideThink`, and that puts the plane in `Idle`
+  (no forces) whenever anyone holds it or it sits in a cart (213–216).
+- `WizardBroomValuable` — while grabbed the host switches to `States.grabbed`: zero
+  gravity and low drag, **no propulsion** (193–206). In a cart it calls `TrapStop` (111).
+- `ValuableCubeBall` — every bounce impulse requires `!physGrabObject.grabbed` (46/66/87).
 
-**Do not blanket-exempt.** Use the drone pattern: exempt dynamically only while the item is
-actually doing its thing (`ItemToggle.toggleState`, flight active, etc.), so carrying an
-inert broom still feels instant. Blanket exemption would make every one of these feel
-host-laggy in hand for no benefit.
+So there is no dead plane to fix, and the dynamic "exempt while flying" pattern is not
+needed for these.
 
-**Status: latent, unconfirmed.** No player has reported a dead plane. Test before fixing.
+### What IS host-only while held (by design since 1.2.14)
+
+The holder does not feel these; other players see them on the host's copy:
+
+- trap valuables that jolt or shake in the hand — `ScreamDollValuable` (37–43) and
+  `IceSawValuable` (147–154) apply random impulses while grabbed. `BabyHeadValuable`,
+  `PhoneValuable`, `TrafficLightValuable` and `MuseumPropMoneyHead` have host-only impulses
+  of the same kind (not each checked for the held case);
+- recoil and swing forces — `ItemGun` (563, 692), `ItemMelee` (922, 1297, 1330), the
+  staffs, `ValuableStarWand`, `ValuableWizardStaff`, `ItemLeafBlower`;
+- hold orientation asked for with `TurnXYZ` on the host. `ItemGun` / `ItemMelee` are
+  computed locally from their own tuning fields (1.1.8 / 1.2.0); other items mirror the
+  host's rotation gently (`mirrorHeldRot`).
+
+Accepted trade: a held object is yours completely. If a trap valuable ever needs to be felt
+by the holder, use the drone pattern (exempt only while it is active), never a blanket
+exemption.
+
+### Host Assist must stay off scripted objects (1.5.3)
+
+Host Assist reverses the direction: the host follows the HOLDER's copy. Its `Steer`
+disables the host's grab forces (`PhysGrabObject.cs:1107` skips the position pull **and**
+the `TurnXYZ` orientation torque) and overwrites both velocities every tick. On a plain
+object that is the whole point. On a scripted one it cancels everything in the list above
+for **every** player, and a `mirrorHeldRot` item would chase its own echo (we copy the
+host's rotation while the host copies ours).
+
+Rule, in `HostAssist.HostDrivenReason`: only carts and plain physics objects are streamed.
+Not streamed — any item (`ItemAttributes`), anything with a `Trap` component, and anything
+carrying a script whose name contains `Valuable` (apart from the plumbing every valuable
+has: `ValuableObject`, `ValuableDiscover*`, ...) or starts with `MuseumProp`. Those behave
+exactly as on a host without Host Assist. The rule errs toward "host-driven": a wrong yes
+only costs the assist on that object. The host applies the same check, so a 1.5.2 client
+cannot make it steer one either.
+
+**Status:** the 1.5.3 rule comes from reading the code and is untested in a lobby. With
+verbose logging, each grab logs `[assist] <name>: streamed to the host` or `not streamed —
+the host drives it (<script>)`; check that plain loot says streamed.
 
 ---
 

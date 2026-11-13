@@ -777,6 +777,8 @@ in it are by design). Headlines:
    exemption - blanket would make all of them feel host-laggy in hand for nothing.
    ItemGun/ItemMelee show up in the scan but are already solved via local orientation
    (1.1.8/1.2.0) and need no change.
+   [2026-11-13: THIS PREDICTION WAS WRONG - none of the three propels itself while held.
+   See the 1.5.3 entry and the rewritten section 4 of PHYSICS-COVERAGE.md.]
 2. PLAYER SIDE: every player action is a host round trip and none of it is predicted -
    both directions of Q (tumble AND standing back up), tumble force/torque, climb end,
    falling state. Tumble wings are split: visuals local, LIFT FORCE master-only
@@ -1021,6 +1023,7 @@ B. Instant A/B hotkey (prediction on/off mid-level) + optional on-screen ping/la
 C. Client send-rate 25 -> 50 as an option (~10-15ms of the loop).
 D. Trajectory Matching on by default once 1.4.3 is validated; then retire the blind grace.
 E. Self-propelled valuables: dynamic exemption while active (still latent, unconfirmed).
+   [DROPPED in 1.5.3 - the prediction was wrong, see that entry.]
 PROFILE NOTE: the user's profile holds two copies (Revival-RevivalSync and
 Revival-RevivalSync-1.4.0); BepInEx loads one. The -1.4.0 folder is a leftover local import.
 
@@ -1070,3 +1073,41 @@ TrajHeldCart stand down (the host follows US - steering toward it chases our own
 plain throw grace applies. Also: a tracked flight ended by a re-grab now logs ("grabbed again").
 EXPECT in the next client log if it works: held cart drift ~ speed x (ping + ~40ms) i.e.
 ~0.6m at 4.8 m/s on an 85ms ping, instead of 1.2m.
+
+## 1.5.3 - Host Assist stays off scripted objects; the "latent class" was mis-predicted
+
+Found by tracing the knowledge graph (graphify): PHYSICS-COVERAGE's "two conditions where
+host data is withheld" node links to TickHeld, and TickHeld now calls HostAssist.ClientSend
+- the doc predated Host Assist. No log, no playtest: this entry is code reading only.
+
+CORRECTION to the 2026-07-25 audit (item 1) and to proposal E in the 1.4.3 review: the
+"hold a flying plane/broom and it goes dead in your hands" prediction is WRONG. Read on the
+Nov 5 build: ValuablePlane's forces are NOT master-gated (FixedUpdate -> StateMachine, state
+by UpdateStateRPC; line 115 only gates ServerSideThink) and the host idles it while anyone
+holds it or it is in a cart; WizardBroom while grabbed is zero-g + low drag with no
+propulsion and stops in a cart; CubeBall's impulses all require !grabbed. The July audit
+saw "master gate + forces in the same file" and did not read which state the forces run in.
+LESSON: a gate and a force in one file is a lead, not a finding - read the grabbed branch.
+Proposal E (dynamic exemption for self-propelled valuables) is dropped.
+
+REAL ISSUE (1.5.0-1.5.2): HostAssist.Steer replaces everything the host does to a held
+object - grabber.OverridePhysGrabForcesDisable makes PhysGrabObject.PhysicsGrabbingManipulation
+`continue` past that grabber (line 1107), skipping the pull AND the TurnXYZ orientation
+torque, and both velocities are overwritten every tick. On a scripted object that cancels,
+for every player: gun recoil (ItemGun 563/692), melee swing forces (ItemMelee 922/1297/1330),
+trap jolts (ScreamDoll 37-43, IceSaw 147-154 while grabbed), and mirrorHeldRot items chase
+their own echo (we copy host rotation, host copies ours).
+FIX: HostAssist.HostDrivenReason(pgo, isCart) -> SimState.hostDriven at registration. Not
+streamed: any ItemAttributes object, anything with a Trap component, any script named
+*Valuable* (minus a small plumbing list) or MuseumProp*. HostAssist.For(st) replaces
+HostAssist.Active at the three per-object call sites (release tail, TrajBeginFlight,
+TrajHeldCart) so a host-driven object gets Trajectory Matching again. The host runs the same
+check when a stream starts (Entry.hostDriven), which covers a 1.5.2 client. Carts and plain
+loot unchanged. A 1.5.3 client is fine on a 1.5.2 host (it just does not send those).
+NAME HEURISTIC, KNOWN WEAKNESS: a new game script that is neither a Trap nor named *Valuable*
+keeps the assist (cosmetic loss only); a new plumbing component named *Valuable* turns the
+assist off for everything carrying it - verbose log prints per grab "[assist] X: streamed to
+the host" / "not streamed - the host drives it (Script)". FIRST THING TO CHECK in the next
+two-machine log: plain loot must say "streamed".
+Unchanged by design (since 1.2.14): the holder does not feel host-only jolts/recoil on what
+they hold. graphify-out/ is gitignored (generated; rebuild with /graphify).

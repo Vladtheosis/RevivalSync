@@ -14,3 +14,6 @@ LocalPaths.props
 # ...but the helper script that PROMPTS for the token (contains no secret) is fine
 !set-token.ps1
 reference/
+
+# generated knowledge graph (rebuild with /graphify)
+graphify-out/

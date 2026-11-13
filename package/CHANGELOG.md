@@ -2,6 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.5.3 — Host Assist: scripted items left to the host
+
+- **Host Assist no longer takes over items and trap valuables.** It replaced everything the
+  host does to whatever you hold, which is right for carts and ordinary loot but wrong for
+  anything with its own behaviour: gun recoil, melee swings, the way tools straighten in
+  your hand, and the jolts and shakes of trap valuables (scream doll, phone, ice saw...)
+  were being cancelled for every player. Those are now left to the host, exactly as they
+  work without Host Assist. Carts and plain loot are unchanged.
+- Works with a host still on 1.5.2, but both players on 1.5.3 is best.
+
 # 1.5.2 — Host Assist: carts
 
 - **Host Assist now actually works for carts.** The host's own cart steering was
