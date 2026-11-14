@@ -2,6 +2,18 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.5.4 — weapons and drones
+
+- **Guns and melee weapons work properly again.** The game's November update moved how
+  weapons aim, turn and swing into code that only runs on the host, so in your hand they
+  sat in the wrong pose, scroll-wheel swings did nothing on your screen, and a thrown
+  weapon jumped about as it was corrected. Weapons are now handled by the game itself, the
+  same as for a player without the mod: correct, but with the usual host delay in the hand.
+- **A switched-on drone is handled by the host even while you hold it**, so it no longer
+  sits still in your hand while it is really flying to its target.
+- **Fixed: an item dropped by a drone could fall through the floor** (until you pressed the
+  resync key). It happened when you threw the item to a waiting drone.
+
 # 1.5.3 — Host Assist: scripted items left to the host
 
 - **Host Assist no longer takes over items and trap valuables.** It replaced everything the

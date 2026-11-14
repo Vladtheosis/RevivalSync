@@ -1111,3 +1111,63 @@ the host" / "not streamed - the host drives it (Script)". FIRST THING TO CHECK i
 two-machine log: plain loot must say "streamed".
 Unchanged by design (since 1.2.14): the holder does not feel host-only jolts/recoil on what
 they hold. graphify-out/ is gitignored (generated; rebuild with /graphify).
+
+## 1.5.4 - weapons back to vanilla, active drones host-driven, drone hand-back state bug
+
+FIRST SESSION WITH BOTH LOGS (2026-11-14, client session-20261114-134321, host
+session-20261114-134259, both 1.5.3, ping ~90ms). User: "super smooth with host assist but
+weapons especially melees move weird and incorrect, a thrown weapon glitches out, same with
+drones; feather drone used on an item then turned off -> item falls through the floor, F4".
+1.5.3 CHECK PASSED: carts and plain loot log "[assist] ...: streamed to the host"; held cart
+drift 0.1m (was 1.1-1.2m). Host Assist for carts works.
+
+WEAPONS. Not a Host Assist problem: the user switched it off mid-session (no [assist] lines
+09:52:40-09:53:30, carts got [traj] lines again) and the bat behaved the same. Numbers: held
+drift 0.22s x speed; thrown-item error avg 0.10-0.25m, max 0.36 (revolver) / 0.53 (sledge) /
+1.10 and 1.06 (bat) vs 0.03-0.07 avg, 0.11-0.13 max for a valuable in the same minutes.
+CAUSE: the local weapon replica (1.1.8/1.2.0: TurnXYZ from aimVerticalOffset / forwardTilt,
+torque 2) no longer describes the game. Nov 5 build, all master-only: ItemGun.UpdateMaster
+only TurnXYZ's when out of ammo, otherwise torque 12 + AimTargetUpdate (aims the muzzle at
+the crosshair target) + OverrideGrabVerticalPosition; ItemMelee has TurnWeapon (turns with
+the swing direction), StateSwinging, ScrollSwingStartRPC -> host impulse (the holder's own
+scroll swing never happened locally), ReleaseTorqueLogic (922), LowMassAngularDamping.
+THE 1.4.3 REVIEW MISSED THIS: it verified that every reflected MEMBER still existed, not
+that the BEHAVIOUR we copied was still the behaviour. LESSON: a local replica of game logic
+needs a behaviour diff on every game update, or it should not exist.
+FIX: CanSimulate returns false for ItemGun / ItemMelee (GetComponentInChildren). Vanilla
+sync = correct by construction, host-laggy in the hand (the trade NR made for all powered
+items). Removed the dead replica: SimState.gun/melee, meleeYRot, both ApplyHeldOrientation
+branches. mirrorHeldRot is now simply "is an item".
+IF INSTANT WEAPONS ARE EVER WANTED AGAIN: not by copying fields. Either run the game's own
+master-only weapon methods for the locally held weapon (the 1.1.1 warning applies - it was
+tried by transpiling and went badly) or accept vanilla.
+
+DRONES. (a) Item through the floor - exact sequence in the client log 09:51:47.51: camera
+thrown (TrajBeginFlight, flying=true), 15ms later "magnet-grabbed" -> droneExempt. Nothing
+ticks while exempt, so the flight froze. 09:51:51.39 drone switched off -> TickShadowInner
+-> TrajStep resumed the 4s-old flight: 16 ticks of "Setting linear velocity of a kinematic
+body" (vanilla sync had left it kinematic; TrajStep runs before the kinematic handling),
+"landed after 0.32s, 1 packets, error avg 2.14m" = one correction of 2.14m against a path
+recorded before the drone carried it off. Same again 09:52:10 (0.35m). F4 each time.
+FIX: ClearTransientSync(st) on BOTH exemption transitions (traj reset, throw grace/ramp,
+noSnap, assist tail, desync/far timers, wasRiding, hostTeleport), plus on a release while
+exempt. RULE: any state that describes "a moment in progress" must be cleared when an
+object crosses between our simulation and vanilla sync, in either direction.
+(b) Active drone in the hand: droneOnly had `!st.localGrab &&` in front of BOTH terms, so a
+switched-on drone was simulated locally while held although ItemDrone.FixedUpdate (934+,
+master-only) is what moves it. Now `toggleState` alone decides for the drone itself; the
+1.2.8 "player grab wins" rule still applies to the drone's TARGET. While exempt: pgoIsMaster
+forced false every tick, StartLocalGrab does not claim (localGrab is still recorded so we
+take over when it is switched off in the hand), and the exempt branch catches an unseen
+release (TickHeld is not running) and scrubs a stale local grabber entry.
+
+SEEN, NOT FIXED (need the user to say what it was): an object named "Head" (view 83,
+registered at level start) was teleported 22.4m at the moment an enemy orb spawned, grabbed
+and streamed at 09:51:27, and at 09:52:23 was in the user's hand while the host's copy was
+kinematic 3km away (drift=2999.5). The pooled-host rule (1.2.12) leaves our copy in the
+world on purpose; if "Head" is something that should vanish, that rule needs an exception.
+Host log: 56 ticks of "Setting linear/angular velocity of a kinematic body" at 09:50:04 with
+no client grab and nothing streamed - not Host Assist (Steer returns on kinematic), source
+unknown (host also runs Admin Menu, REPOLib, MenuLib).
+trajLag swung 123 -> 275 -> 162ms in one session: it is one global value, and since 1.5.3
+only non-streamed objects feed it. Not acted on.

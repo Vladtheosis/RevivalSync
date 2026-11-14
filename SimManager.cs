@@ -53,9 +53,7 @@ namespace RevivalSync
             public bool wasRiding;          // rode a cart last tick: schedule a gentle staged return
             public Trajectory traj;         // path history + in-flight steering (Trajectory Matching)
             public float rideHoldTimer;     // carts: keep marking riders briefly after use ends
-            public bool mirrorHeldRot;      // item without local orientation logic: copy host rotation while held
-            public ItemGun gun;             // weapons compute their hold orientation locally
-            public ItemMelee melee;         // (from their own tuning fields — no network in the loop)
+            public bool mirrorHeldRot;      // item: copy the host's (straightened) rotation while held
 
             public bool hasHostState;
             public float lastPacketTime = -999f;
@@ -114,7 +112,6 @@ namespace RevivalSync
 
         // ---- reflection accessors into game internals ----
         private static AccessTools.FieldRef<PhysGrabObject, bool> pgoIsMaster;
-        private static AccessTools.FieldRef<ItemMelee, Quaternion> meleeYRot;
         private static AccessTools.FieldRef<PhysGrabObject, bool> pgoIsActive;
         internal static AccessTools.FieldRef<PhysGrabObject, bool> pgoHeldByLocal;
         internal static AccessTools.FieldRef<ItemToggle, int> togglePlayerId;
@@ -162,7 +159,6 @@ namespace RevivalSync
                 cartGrabArea = AccessTools.FieldRefAccess<PhysGrabCart, PhysGrabObjectGrabArea>("physGrabObjectGrabArea");
                 avatarSprinting = AccessTools.FieldRefAccess<PlayerAvatar, bool>("isSprinting");
                 hingeBroken = AccessTools.FieldRefAccess<PhysGrabHinge, bool>("broken");
-                meleeYRot = AccessTools.FieldRefAccess<ItemMelee, Quaternion>("currentYRotation");
                 pgoThrow = AccessTools.Method(typeof(PhysGrabObject), "Throw");
 
                 ptvNetPos = AccessTools.FieldRefAccess<PhotonTransformView, Vector3>("m_NetworkPosition");
@@ -253,11 +249,10 @@ namespace RevivalSync
             if (o.GetComponentInParent<Enemy>() != null) return false;
             if (o.GetComponentInParent<EnemyRigidbody>() != null) return false;
             if (o.GetComponentInParent<PhysGrabHinge>() != null) return Plugin.SimulateHinges.Value;
-            // Item policy: the client controls what it touches. Weapons use locally
-            // computed orientation (their own tuning fields — no network in the rotation
-            // loop); gadgets mirror the host gently. Only genuinely AUTONOMOUS objects
-            // stay vanilla — things that move themselves rather than being moved:
-            // drivable vehicles, flying drones, and the self-propelled duck.
+            // Item policy: the client controls what it touches; gadgets mirror the host's
+            // hold rotation gently. Objects whose motion comes from host-only logic stay
+            // vanilla: drivable vehicles, active drones, the self-propelled duck, cart
+            // turrets and (since 1.5.4) weapons.
             // (The old NetworkingReworked blocked all powered items instead — stable,
             // but every tool felt host-laggy in hand. We keep its blocklist only for
             // the autonomous class, where it is unambiguously right.)
@@ -280,6 +275,19 @@ namespace RevivalSync
             // race and takes the upgrade. Nothing about holding an orb needs instant
             // physics, so we stay out of it entirely and let vanilla decide.
             if (o.GetComponentInParent<ItemUpgrade>() != null) return false;
+            // Weapons are host-driven (1.5.4). Up to 1.5.3 we simulated them and computed the
+            // hold orientation ourselves from their tuning fields, which matched the game of
+            // mid-2026. The Nov 2026 build moved their handling into master-only code we do
+            // not run: guns aim at the crosshair target (ItemGun.AimTargetUpdate) with their
+            // own grab height and torque, melee turns with the swing (TurnWeapon), swings on
+            // the scroll wheel (ScrollSwingStartRPC -> host impulse) and gets a release torque
+            // — plus recoil and swing forces. In the holder's hand none of that happened
+            // ("they move weird and incorrect"), and a thrown weapon left the hand in a pose
+            // the host never had, so its flight was corrected by up to 1.1m ("glitches out").
+            // Re-implementing ~300 lines of weapon logic that changes with every update is
+            // the 1.1.1 mistake again; vanilla sync is correct by construction.
+            if (o.GetComponentInChildren<ItemGun>(true) != null) return false;
+            if (o.GetComponentInChildren<ItemMelee>(true) != null) return false;
             if (o.GetComponentInParent<ItemAttributes>() != null)
             {
                 foreach (Component c in o.GetComponentsInParent<Component>(true))
@@ -422,13 +430,9 @@ namespace RevivalSync
             }
             if (!st.isHinge && st.cart == null && pgo.GetComponentInParent<ItemAttributes>() != null)
             {
-                // weapons compute their hold orientation LOCALLY from their own tuning
-                // fields (aim offset, tilt) — mirroring the host's rotation at full
-                // strength telegraphs the 10Hz ping-late packet steps ("glitchy").
-                // Gadgets without known orientation fields mirror the host gently.
-                st.gun = pgo.GetComponentInChildren<ItemGun>(true);
-                st.melee = pgo.GetComponentInChildren<ItemMelee>(true);
-                st.mirrorHeldRot = st.gun == null && st.melee == null;
+                // gadgets: the host runs their straightening scripts, we mirror its rotation
+                // gently (weapons are not simulated at all — see CanSimulate)
+                st.mirrorHeldRot = true;
                 st.droneSelf = pgo.GetComponentInChildren<ItemDrone>(true);
                 if (st.droneSelf != null)
                 {
@@ -489,6 +493,9 @@ namespace RevivalSync
             TrajEnd(st, "grabbed again"); // logs a flight that was still being tracked
             st.traj?.Reset(); // a new hold starts a new path
             st.assistTail = 0f;
+            // a drone-driven object stays on vanilla sync even in our hand; the grab is
+            // remembered so we take over the moment the drone lets go or is switched off
+            if (st.droneExempt) return;
             pgoIsMaster(pgo) = true;
             EnsureDynamic(st);
         }
@@ -540,6 +547,9 @@ namespace RevivalSync
             // streaming for a moment so its copy glides onto ours instead of jumping
             HostAssist.ClientSend(st, true);
             st.assistTail = HostAssist.For(st) && !st.isHinge ? HostAssist.Tail : 0f;
+            // let go of something a drone is driving (an active drone): it was never ours,
+            // so there is no throw to protect and no flight to track
+            if (st.droneExempt) ClearTransientSync(st, null);
 
             // covers the unseen-release path (forced drop, knocked out of hand by hitting
             // a player): GrabEnded never ran, so the entry our grab patch added is still
@@ -600,33 +610,9 @@ namespace RevivalSync
         /// how PhysGrabObject.TurnXYZ writes them for item scripts.</summary>
         private static void ApplyHeldOrientation(SimState st, PhysGrabber grabber)
         {
-            if (st.gun != null)
-            {
-                // ItemGun.UpdateMaster's orientation core, computed locally: camera-
-                // forward aim with the gun's own vertical offset, held at the gun's own
-                // torque/damping values. No network data in the loop = no glitch.
-                st.pgo.TurnXYZ(Quaternion.Euler(st.gun.aimVerticalOffset, 0f, 0f),
-                    Quaternion.identity, Quaternion.identity);
-                st.pgo.OverrideTorqueStrength(2f);
-                st.pgo.OverrideAngularDrag(20f);
-                return;
-            }
-            if (st.melee != null)
-            {
-                // ItemMelee.TurnXYZLogic computed locally, with melee's softer hold
-                if (!st.melee.usesForceRotation) return;
-                Quaternion turnX = st.melee.turnWeapon
-                    ? Quaternion.Euler(st.melee.forwardTilt, 0f, 0f)
-                    : Quaternion.Euler(st.melee.forwardTilt + st.melee.orientationOffset.x,
-                        st.melee.orientationOffset.y, st.melee.orientationOffset.z);
-                st.pgo.TurnXYZ(turnX, meleeYRot(st.melee), Quaternion.identity);
-                st.pgo.OverrideTorqueStrength(st.melee.customTorqueStrength ? st.melee.torqueStrength : 0.4f);
-                st.pgo.OverrideAngularDrag(5f);
-                return;
-            }
             if (!st.mirrorHeldRot || !st.hasHostState) return;
-            // gadgets without known orientation fields: gentle host mirror — soft enough
-            // that the 10Hz ping-late target can't telegraph as glitching
+            // gentle host mirror — soft enough that the ping-late target can't telegraph
+            // as glitching
             if (grabber.playerAvatar == null || grabber.playerAvatar.localCamera == null) return;
             Transform cam = grabber.playerAvatar.localCamera.GetOverrideTransform();
             if (cam == null) return;
@@ -644,7 +630,7 @@ namespace RevivalSync
             foreach (SimState st in states.Values)
             {
                 if (!st.localGrab) continue;
-                if (st.gun == null && st.melee == null && !st.mirrorHeldRot) continue;
+                if (!st.mirrorHeldRot) continue;
                 PhysGrabber grabber = GetLocalGrabber(st);
                 if (grabber == null || grabber.isRotating) continue;
                 ApplyHeldOrientation(st, grabber);
@@ -811,25 +797,46 @@ namespace RevivalSync
                 // holding it (that is the feather drone's whole purpose: helping a player
                 // carry heavy loot). The player's grab always wins; 1.2.7 exempted held
                 // objects too and the fight caused an infinite exempt/re-register flap.
-                bool droneOnly = !st.localGrab
-                    && ((droneTargetMap.Count > 0 && droneTargetMap.ContainsKey(st.pgo))
-                        || (st.droneSelf != null && st.droneToggle != null && st.droneToggle.toggleState));
+                // An ACTIVE drone is different (1.5.4): everything that moves it is master-only
+                // (ItemDrone.FixedUpdate), so it is the host's whether or not we hold it — a
+                // switched-on drone simulated in the hand sat still while the host's copy
+                // flew to its target.
+                bool droneOnly = (st.droneSelf != null && st.droneToggle != null && st.droneToggle.toggleState)
+                    || (!st.localGrab && droneTargetMap.Count > 0 && droneTargetMap.ContainsKey(st.pgo));
                 if (droneOnly != st.droneExempt)
                 {
                     st.droneExempt = droneOnly;
+                    // Nothing ticks while exempt, so every timer and the throw tracker would
+                    // freeze mid-state and resume, stale, at hand-back. That was the "drone
+                    // lets go and the item falls through the floor" bug: an item thrown to a
+                    // waiting drone was taken one tick after release with its flight still
+                    // being tracked; seconds later the tracker woke up, compared the host's
+                    // packet with a path recorded before the drone carried the item away, and
+                    // shoved it 2.1m — through the floor — while writing velocities to a body
+                    // vanilla sync had left kinematic.
+                    ClearTransientSync(st, droneOnly ? "a drone took it" : null);
                     if (droneOnly)
                     {
-                        pgoIsMaster(st.pgo) = false;
                         // hand to vanilla WITHOUT unregistering (Restore() fully removes
                         // the state — that removal was the 969-cycle flap in one session)
                         SeedPtvFields(st);
-                        if (Plugin.VerboseLogging.Value)
-                        {
-                            Plugin.Log.LogInfo($"[drone] {st.pgo.name}: magnet-grabbed — host drives it until released");
-                        }
+                    }
+                    if (Plugin.VerboseLogging.Value)
+                    {
+                        Plugin.Log.LogInfo(droneOnly
+                            ? $"[drone] {st.pgo.name}: drone-driven — host drives it until released"
+                            : $"[drone] {st.pgo.name}: released by the drone — simulated again");
                     }
                 }
-                if (st.droneExempt) continue;
+                if (st.droneExempt)
+                {
+                    pgoIsMaster(st.pgo) = false; // a grab during the exemption must not claim it
+                    // TickHeld is not watching this one: catch a release we never saw (forced
+                    // drop, death) so no stale "held by us" entry outlives the grab
+                    if (st.localGrab && GetLocalGrabber(st) == null) st.localGrab = false;
+                    if (!st.localGrab) ScrubStaleLocalGrabber(st.pgo);
+                    continue;
+                }
 
                 if (st.localGrab)
                 {
@@ -844,6 +851,23 @@ namespace RevivalSync
                     TickShadow(st);
                 }
             }
+        }
+
+        /// <summary>Forget everything that describes a moment in progress — throw grace, snap
+        /// guards, the tracked flight, the Host Assist tail — when an object changes hands
+        /// between our simulation and vanilla sync.</summary>
+        private static void ClearTransientSync(SimState st, string flightEndedBecause)
+        {
+            if (flightEndedBecause != null) TrajEnd(st, flightEndedBecause);
+            st.traj?.Reset();
+            st.postThrowTimer = 0f;
+            st.postThrowRamp = 0f;
+            st.noSnapTimer = 0f;
+            st.assistTail = 0f;
+            st.desyncTimer = 0f;
+            st.farTimer = 0f;
+            st.wasRiding = false;
+            st.hostTeleport = false;
         }
 
         /// <summary>Local player is holding this object: full local authority, but keep both

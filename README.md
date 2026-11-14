@@ -30,9 +30,8 @@ and the release-state overwrite that makes throws fly clean. Thank you.
 
 - **Instant grabs**: valuables, props, items and carts respond the moment you grab them,
   no host round trip. Carts follow you at full speed with the game's real steering feel;
-  weapons aim with your camera using their own orientation tuning; throws fly the way you
-  threw them. Only self-moving objects (vehicles, drones, the duck) use the game's normal
-  sync.
+  throws fly the way you threw them. Objects the host has to drive itself (guns and melee
+  weapons, vehicles, switched-on drones, the duck) use the game's normal sync.
 - **Instant doors**: doors and cabinets run the game's own hinge logic locally, so they
   swing the moment you touch them (the host still decides when they break).
 - **Synced world**: everything you're not holding glides smoothly toward the host's

@@ -11,8 +11,8 @@ Read this before adding any new object to the simulation, and before assuming a
 
 ## 1. Predicted locally (the mod owns these)
 
-Props and valuables, loot, **carts**, **doors/cabinets** (hinges), weapons, gadgets,
-grenades, death heads. Anything with a `PhysGrabObject` + `PhotonTransformView` that is
+Props and valuables, loot, **carts**, **doors/cabinets** (hinges), gadgets, grenades,
+death heads. (Weapons were on this list until 1.5.4.) Anything with a `PhysGrabObject` + `PhotonTransformView` that is
 not on the exemption list in `SimManager.CanSimulate`.
 
 ## 2. Deliberately handed back to vanilla
@@ -20,7 +20,9 @@ not on the exemption list in `SimManager.CanSimulate`.
 | Object | Since | Why |
 |---|---|---|
 | `ItemVehicle` | early | drives itself; host-only |
-| `ItemDrone` (while flying / magnet-carrying) | 1.2.8 | dynamic exemption — a *carried* drone is still predicted |
+| `ItemDrone` (while switched on) | 1.2.8 | dynamic exemption — a switched-off drone in the hand is still predicted. Since 1.5.4 a switched-on drone is the host's even while held (`ItemDrone.FixedUpdate` is master-only) |
+| objects a drone is carrying | 1.2.7 | the drone provides the motion; the local player's own grab still wins |
+| `ItemGun`, `ItemMelee` | 1.5.4 | aim (`AimTargetUpdate`), turn-with-swing (`TurnWeapon`), scroll swing, release torque, recoil are all master-only since the Nov 2026 build |
 | `ItemRubberDuck` | early | self-propelled |
 | `ItemUpgrade` | 1.2.17 | client-side attribution race — latency advantage stole upgrades |
 | `ItemCartCannonMain` (cart cannon + laser) | 1.2.21 | upright/aim pose is master-only |
@@ -89,11 +91,15 @@ The holder does not feel these; other players see them on the host's copy:
   `IceSawValuable` (147–154) apply random impulses while grabbed. `BabyHeadValuable`,
   `PhoneValuable`, `TrafficLightValuable` and `MuseumPropMoneyHead` have host-only impulses
   of the same kind (not each checked for the held case);
-- recoil and swing forces — `ItemGun` (563, 692), `ItemMelee` (922, 1297, 1330), the
-  staffs, `ValuableStarWand`, `ValuableWizardStaff`, `ItemLeafBlower`;
-- hold orientation asked for with `TurnXYZ` on the host. `ItemGun` / `ItemMelee` are
-  computed locally from their own tuning fields (1.1.8 / 1.2.0); other items mirror the
-  host's rotation gently (`mirrorHeldRot`).
+- recoil and kick forces — the staffs, `ValuableStarWand`, `ValuableWizardStaff`,
+  `ItemLeafBlower`;
+- hold orientation asked for with `TurnXYZ` on the host: items mirror the host's rotation
+  gently (`mirrorHeldRot`).
+
+`ItemGun` and `ItemMelee` were in this group with a locally computed hold orientation
+(1.1.8 / 1.2.0). The Nov 2026 build grew their host-only part far past that (see section
+2) and a two-player session showed it: "they move weird and incorrect", thrown-weapon
+corrections up to 1.1m. Since 1.5.4 they are not simulated at all.
 
 Accepted trade: a held object is yours completely. If a trap valuable ever needs to be felt
 by the holder, use the drone pattern (exempt only while it is active), never a blanket
