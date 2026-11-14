@@ -15,7 +15,7 @@ namespace RevivalSync
     {
         public const string PluginGuid = "com.Revival.revivalsync";
         public const string PluginName = "RevivalSync";
-        public const string PluginVersion = "1.5.4";
+        public const string PluginVersion = "1.6.0";
 
         internal static ManualLogSource Log;
 
@@ -23,6 +23,7 @@ namespace RevivalSync
         internal static ConfigEntry<bool> SimulateCarts;
         internal static ConfigEntry<bool> SimulateHinges;
         internal static ConfigEntry<bool> SimulateItems;
+        internal static ConfigEntry<bool> InstantWeapons;
         internal static ConfigEntry<bool> InstantCartHandle;
         internal static ConfigEntry<float> PassiveSyncStrength;
         internal static ConfigEntry<float> PostThrowGrace;
@@ -166,11 +167,17 @@ namespace RevivalSync
                 "Only turn this off if doors misbehave for you. Takes full effect on the " +
                 "next game launch.");
             SimulateItems = Config.Bind("1. Main", "Instant Items", true,
-                "Weapons, grenades and gadgets follow your hand instantly, aim with your " +
-                "camera and fly the way you throw them. Damage and explosions are still " +
-                "decided by the host, like normal. Vehicles, drones and the duck always " +
-                "use the game's normal sync (they move themselves). Only turn this off " +
-                "if an item misbehaves for you. Changes apply from the next level.");
+                "Grenades, tools and gadgets follow your hand instantly and fly the way you " +
+                "throw them. Damage and explosions are still decided by the host, like normal. " +
+                "Vehicles, switched-on drones and the duck always use the game's normal sync " +
+                "(they move themselves). Only turn this off if an item misbehaves for you. " +
+                "Changes apply from the next level.");
+            InstantWeapons = Config.Bind("1. Main", "Instant Weapons (experimental)", false,
+                "Guns and melee weapons follow your hand instantly: the game's own aiming, " +
+                "turning and swinging runs on your side for the weapon you hold. Shots and hits " +
+                "are still decided by the host. OFF = weapons use the game's normal sync " +
+                "(always correct, but with the usual delay in your hand). Needs Instant Items " +
+                "on. Changes apply from the next level.");
             DisableTimeout = Config.Bind("1. Main", "No Timeout Kicks", true,
                 "Stops the game from kicking you out of the lobby during short lag spikes.");
             // a plain string (not a KeyCode enum): REPOConfig renders enums as a slider
@@ -188,11 +195,14 @@ namespace RevivalSync
                 "Thrown items and carts you push follow the host's path while they move, instead " +
                 "of flying on your screen alone and then settling where the host has them. " +
                 "Turn it on and off in the same session to compare. Takes effect on your next throw.");
-            HostAssistEnabled = Config.Bind("1. Main", "Host Assist (experimental)", false,
-                "Needs BOTH the host and you to have RevivalSync with this ON. What you hold is " +
-                "sent straight to the host, so the host's copy follows yours instead of trailing " +
-                "behind, and throws fly the same on every screen. Does nothing with a host that " +
-                "does not have it. When you host, it lets your friends' held items do the same.");
+            // a NEW key (was "Host Assist (experimental)", default off): the old key's saved
+            // "false" would otherwise keep it off for everyone who ever ran 1.5.x
+            HostAssistEnabled = Config.Bind("1. Main", "Host Assist", true,
+                "Automatic: switches itself on whenever the host also has RevivalSync. What you " +
+                "hold is sent straight to the host, so the host's copy follows yours instead of " +
+                "trailing behind, and throws fly the same on every screen. With a host that does " +
+                "not have the mod nothing changes. When you host, it lets your friends' carts and " +
+                "loot do the same. Turn this OFF to force it off.");
             SmoothSync = Config.Bind("1. Main", "Smooth Enemies", true,
                 "Enemies and other host-controlled things move smoothly instead of stuttering. " +
                 "Takes effect on the next game launch.");
@@ -283,6 +293,10 @@ namespace RevivalSync
                 typeof(Patches.TransformViewUpdatePatch),
                 typeof(Patches.TransformViewSerializePatch),
                 typeof(Patches.CartAuthorityPatch),
+                typeof(Patches.WeaponAuthorityPatch),
+                typeof(Patches.MeleeScrollSwingPatch),
+                typeof(Patches.MeleeScrollSwingReceivePatch),
+                typeof(Patches.GunRecoilPatch),
                 typeof(Patches.ToggleClaimLogPatch),
                 typeof(Patches.UpgradeCreditLogPatch),
             };
@@ -325,7 +339,7 @@ namespace RevivalSync
 
             Log.LogInfo($"{PluginName} {PluginVersion} loaded. Patches: {patched} ok, {failed} failed. " +
                         $"SmoothSync: {Smoothing.Active}. Prediction activates when you join someone else's lobby; " +
-                        "the mod is inert while hosting.");
+                        "while hosting, only Host Assist runs.");
         }
 
         /// <summary>Every RevivalSync setting back to its default, including the reset switch

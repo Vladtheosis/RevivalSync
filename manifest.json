@@ -1,8 +1,8 @@
 {
     "name": "RevivalSync",
-    "version_number": "1.5.4",
+    "version_number": "1.6.0",
     "website_url": "https://github.com/Vladtheosis/RevivalSync",
-    "description": "[Experimental] Replacement for NetworkingReworked. Singleplayer-feel multiplayer for R.E.P.O. v0.5.0+: instant carts, doors, items, no timeout kicks. Works with unmodded hosts. CartSpeedSync is not supported and gets auto-disabled. By Revival.",
+    "description": "[Experimental] NetworkingReworked replacement. Singleplayer-feel multiplayer for R.E.P.O. v0.5.0+: instant carts, doors, items. Works with unmodded hosts; best when everyone has it (Host Assist auto-enables). CartSpeedSync auto-disabled. By Revival.",
     "dependencies": [
         "BepInEx-BepInExPack-5.4.2100"
     ]

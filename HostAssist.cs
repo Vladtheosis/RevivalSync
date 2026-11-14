@@ -8,8 +8,8 @@ using UnityEngine;
 namespace RevivalSync
 {
     /// <summary>
-    /// Host Assist (config, experimental, off by default): when BOTH the host and a client run
-    /// RevivalSync with it on, the client streams the state of what it holds to the host and
+    /// Host Assist (config, ON by default since 1.6.0 = automatic): when BOTH the host and a
+    /// client run RevivalSync, the client streams the state of what it holds to the host and
     /// the host's copy follows it, instead of re-simulating the grab one upload-lag late. On
     /// release the host takes the client's release velocity, so both fly the same arc.
     ///
@@ -25,6 +25,15 @@ namespace RevivalSync
     {
         private const byte EventCode = 187;
         private const string Prop = "rsync";
+        // Value of the player property. 1 = 1.5.x (opt-in, items steered or not depending on
+        // the build); 2 = 1.6.0: on by default, weapons streamed, scripted objects not. A
+        // client only streams to a host on its own protocol or newer.
+        private const int Protocol = 2;
+
+        private static int ProtocolOf(Player p)
+        {
+            return p != null && p.CustomProperties.TryGetValue(Prop, out object v) && v is int i ? i : 0;
+        }
         private const float MaxGap = 4f;     // metres between host copy and reported state
         private const float MaxSpeed = 30f;
         private const float Follow = 10f;    // same gain the game uses for its own velocity follow
@@ -76,6 +85,12 @@ namespace RevivalSync
         internal static string HostDrivenReason(PhysGrabObject pgo, bool isCart)
         {
             if (pgo == null || isCart) return null;
+            // A weapon is only ever streamed by a client running the game's weapon logic for
+            // it (Instant Weapons): its copy is the complete one, recoil and swings included.
+            if (pgo.GetComponentInChildren<ItemGun>(true) != null || pgo.GetComponentInChildren<ItemMelee>(true) != null)
+            {
+                return null;
+            }
             if (pgo.GetComponentInParent<ItemAttributes>() != null) return "item";
             foreach (MonoBehaviour c in pgo.GetComponentsInChildren<MonoBehaviour>(true))
             {
@@ -110,18 +125,22 @@ namespace RevivalSync
             if (Time.unscaledTime < nextPropCheck) return;
             nextPropCheck = Time.unscaledTime + 2f;
             hostSupports = false;
-            if (!On || !PhotonNetwork.InRoom) return;
+            if (!PhotonNetwork.InRoom) return;
+            // Advertise what we speak — and 0 when switched off, so nobody keeps treating a
+            // host that turned it off as one that follows them.
             Player me = PhotonNetwork.LocalPlayer;
-            if (me != null && !me.CustomProperties.ContainsKey(Prop))
+            int mine = On ? Protocol : 0;
+            if (me != null && ProtocolOf(me) != mine && (mine != 0 || me.CustomProperties.ContainsKey(Prop)))
             {
-                me.SetCustomProperties(new Hashtable { { Prop, 1 } });
+                me.SetCustomProperties(new Hashtable { { Prop, mine } });
             }
+            if (!On) return;
             Player host = PhotonNetwork.MasterClient;
-            hostSupports = host != null && !host.IsLocal && host.CustomProperties.ContainsKey(Prop);
+            hostSupports = host != null && !host.IsLocal && ProtocolOf(host) >= Protocol;
             if (hostSupports && !announcedClient)
             {
                 announcedClient = true;
-                Plugin.Log.LogInfo("[assist] the host runs RevivalSync with Host Assist — what you hold is streamed to it.");
+                Plugin.Log.LogInfo("[assist] the host has RevivalSync — Host Assist is on: what you hold is streamed to it.");
             }
         }
 

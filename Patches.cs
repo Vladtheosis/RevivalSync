@@ -448,6 +448,193 @@ namespace RevivalSync.Patches
     }
 
     /// <summary>
+    /// Instant Weapons (config, experimental). Weapons need more than an instant grab: the
+    /// game aims guns at the crosshair target, turns melee weapons with the swing and applies
+    /// their grab tuning in master-only code, so a weapon we simulate ourselves sits in the
+    /// wrong pose (1.5.3 playtest). Up to 1.5.3 that pose was re-computed from the weapons'
+    /// tuning fields, which silently went stale when the game changed.
+    ///
+    /// This runs the GAME'S OWN methods instead, for the one weapon the local player holds:
+    /// the master check inside these methods also passes for that weapon. Only methods that
+    /// do nothing but pose and tune the held weapon are listed — every one was read for side
+    /// effects. State changes, shots, hits, battery and damage sit behind their own master
+    /// checks in other methods (StateSet, ShootLogic, ShootBullet, BatteryCheckLogic...) and
+    /// stay with the host.
+    ///
+    /// The 1.1.0 attempt at this buzzed violently — back then a held object was also being
+    /// corrected toward the host every tick and mirrored the host's rotation. Neither
+    /// happens any more (1.2.14: nothing touches what you hold; weapons do not mirror).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class WeaponAuthorityPatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            var targets = new List<MethodBase>();
+            void Add(Type type, string name)
+            {
+                MethodInfo m = AccessTools.Method(type, name);
+                if (m != null) targets.Add(m);
+                else Plugin.Log.LogWarning($"WeaponAuthorityPatch: {type.Name}.{name} not found — that part of Instant Weapons stays host-driven.");
+            }
+
+            Add(typeof(ItemGun), "UpdateMaster");        // grab height, torque, out-of-ammo droop
+            Add(typeof(ItemGun), "AimTargetUpdate");     // points the muzzle at the crosshair target
+            Add(typeof(ItemMelee), "FixedUpdate");       // hold pose, grab tuning, swing detection, release spin
+            Add(typeof(ItemMelee), "TurnWeapon");        // blade turns with the swing direction
+            Add(typeof(ItemMelee), "ScrollSwingAnimationTick"); // second half of a scroll-wheel swing
+            Add(typeof(ItemMelee), "ScrollSwingStartRPC");      // first half (see MeleeScrollSwingPatch)
+            return targets;
+        }
+
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
+        {
+            MethodInfo masterOrSingle = AccessTools.Method(typeof(SemiFunc), "IsMasterClientOrSingleplayer");
+            MethodInfo isMultiplayer = AccessTools.Method(typeof(SemiFunc), "IsMultiplayer");
+            MethodInfo auth = AccessTools.Method(typeof(WeaponAuthorityPatch), nameof(MasterOrHeldWeapon));
+            MethodInfo senderCheck = AccessTools.Method(typeof(WeaponAuthorityPatch), nameof(HostMustCheckSender));
+            bool isSwingStart = original.Name == "ScrollSwingStartRPC";
+
+            int replaced = 0;
+            foreach (CodeInstruction ins in instructions)
+            {
+                if (masterOrSingle != null && ins.Calls(masterOrSingle))
+                {
+                    var loadThis = new CodeInstruction(OpCodes.Ldarg_0);
+                    loadThis.labels.AddRange(ins.labels);
+                    loadThis.blocks.AddRange(ins.blocks);
+                    yield return loadThis;
+                    yield return new CodeInstruction(OpCodes.Call, auth);
+                    replaced++;
+                }
+                else if (isSwingStart && isMultiplayer != null && ins.Calls(isMultiplayer))
+                {
+                    // "in multiplayer, verify the sender holds this weapon" is the HOST's check
+                    // on a network call; our own local call has no sender to verify
+                    ins.operand = senderCheck;
+                    yield return ins;
+                }
+                else
+                {
+                    yield return ins;
+                }
+            }
+
+            if (replaced == 0)
+            {
+                Plugin.Log.LogWarning($"WeaponAuthorityPatch: no authority check found in {original.DeclaringType?.Name}.{original.Name} — game code may have changed.");
+            }
+        }
+
+        public static bool MasterOrHeldWeapon(Component self)
+        {
+            if (!GameManager.Multiplayer()) return true;
+            if (PhotonNetwork.IsMasterClient) return true;
+            return SimManager.HeldWeaponBody(self) != null;
+        }
+
+        public static bool HostMustCheckSender()
+        {
+            return GameManager.Multiplayer() && PhotonNetwork.IsMasterClient;
+        }
+    }
+
+    /// <summary>
+    /// Scroll-wheel melee swing, on our side. The game sends the swing to the host only and
+    /// the host kicks ITS copy of the weapon; the weapon in our hand never moved. When the
+    /// game's own input code starts a swing (seen as one of its two cooldowns being re-armed)
+    /// the same start routine is run locally with the same arguments it sent.
+    /// </summary>
+    [HarmonyPatch(typeof(ItemMelee), "ScrollRotateLogic")]
+    internal static class MeleeScrollSwingPatch
+    {
+        private static AccessTools.FieldRef<ItemMelee, float> upCooldown;
+        private static AccessTools.FieldRef<ItemMelee, float> downCooldown;
+        private static MethodInfo swingStart;
+        internal static bool localCall;
+
+        private static bool Prepare()
+        {
+            try
+            {
+                upCooldown = AccessTools.FieldRefAccess<ItemMelee, float>("scrollRotateUpCooldown");
+                downCooldown = AccessTools.FieldRefAccess<ItemMelee, float>("scrollRotateDownCooldown");
+                swingStart = AccessTools.Method(typeof(ItemMelee), "ScrollSwingStartRPC");
+            }
+            catch (Exception)
+            {
+                swingStart = null;
+            }
+            if (swingStart == null || swingStart.GetParameters().Length != 3)
+            {
+                Plugin.Log.LogWarning("MeleeScrollSwingPatch: scroll swing internals changed — scroll swings stay host-only.");
+                return false;
+            }
+            return true;
+        }
+
+        private static void Prefix(ItemMelee __instance, out Vector2 __state)
+        {
+            __state = new Vector2(upCooldown(__instance), downCooldown(__instance));
+        }
+
+        private static void Postfix(ItemMelee __instance, Vector2 __state)
+        {
+            if (!SimManager.Ready || !GameManager.Multiplayer() || PhotonNetwork.IsMasterClient) return;
+            // both cooldowns only ever count DOWN, except in the tick a swing starts
+            int direction = upCooldown(__instance) > __state.x ? 1
+                : downCooldown(__instance) > __state.y ? -1 : 0;
+            if (direction == 0 || SimManager.HeldWeaponBody(__instance) == null) return;
+
+            PhysGrabber grabber = PhysGrabber.instance;
+            if (grabber == null || grabber.playerAvatar == null || grabber.playerAvatar.localCamera == null) return;
+            Vector3 axis = grabber.playerAvatar.localCamera.transform.right;
+            try
+            {
+                localCall = true;
+                swingStart.Invoke(__instance, new object[] { axis, direction, default(PhotonMessageInfo) });
+            }
+            catch (Exception e)
+            {
+                if (Plugin.VerboseLogging.Value) Plugin.Log.LogWarning($"Local scroll swing failed: {e.Message}");
+            }
+            finally
+            {
+                localCall = false;
+            }
+        }
+    }
+
+    /// <summary>The swing start routine now also runs for our own held weapon — but only when
+    /// WE call it. Nothing arriving over the network may trigger it on a client (a vanilla
+    /// client ignores it there too).</summary>
+    [HarmonyPatch(typeof(ItemMelee), "ScrollSwingStartRPC")]
+    internal static class MeleeScrollSwingReceivePatch
+    {
+        private static bool Prefix()
+        {
+            if (!GameManager.Multiplayer() || PhotonNetwork.IsMasterClient) return true;
+            return MeleeScrollSwingPatch.localCall;
+        }
+    }
+
+    /// <summary>Recoil for the gun in our hand. The host kicks its copy when a shot fires;
+    /// ours stayed dead still. Same impulse, same moment the shot arrives.</summary>
+    [HarmonyPatch(typeof(ItemGun), "ShootRPC")]
+    internal static class GunRecoilPatch
+    {
+        private static void Postfix(ItemGun __instance, PhotonMessageInfo _info)
+        {
+            if (!SimManager.Ready || !GameManager.Multiplayer() || PhotonNetwork.IsMasterClient) return;
+            if (_info.Sender == null || !_info.Sender.IsMasterClient) return; // the game rejected it too
+            Rigidbody rb = SimManager.HeldWeaponBody(__instance);
+            Transform muzzle = __instance.gunMuzzle;
+            if (rb == null || rb.isKinematic || muzzle == null) return;
+            rb.AddForceAtPosition(-muzzle.forward * __instance.gunRecoilForce, muzzle.position, ForceMode.Impulse);
+        }
+    }
+
+    /// <summary>
     /// The BepInEx plugin component's Update/FixedUpdate never ran before game v0.5.0 (they
     /// do now), so the driver loops ride on game code that provably updates: GameDirector
     /// (every frame) and PlayerController (every physics step, exists whenever gameplay

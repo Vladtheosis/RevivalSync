@@ -2,6 +2,22 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.6.0 — Host Assist is automatic, Instant Weapons
+
+- **Host Assist now switches itself on** whenever the host also has RevivalSync — nothing
+  to set up. What you hold is sent straight to the host, so its copy of your cart or loot
+  follows yours instead of trailing behind, and throws fly the same on every screen. With
+  a host that does not have the mod, nothing changes. **Recommended: everyone in the lobby
+  installs RevivalSync, same version.** The `Host Assist` switch forces it off.
+- **New option: "Instant Weapons (experimental)"**, off by default. Guns and melee weapons
+  follow your hand instantly again, this time by running the game's own aiming, turning
+  and swinging on your side for the weapon you hold (including scroll-wheel swings and
+  recoil), so it keeps matching the game after updates. Shots and hits are still decided
+  by the host. With Host Assist the host's copy of your weapon follows yours too. Leave it
+  off and weapons behave as in 1.5.4.
+- **Fixed: the Cleanup Crew's bomb head** could be left lying around as a ghost you could
+  pick up after it had exploded. It is driven by the host now, like other enemy parts.
+
 # 1.5.4 — weapons and drones
 
 - **Guns and melee weapons work properly again.** The game's November update moved how

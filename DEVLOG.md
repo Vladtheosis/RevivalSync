@@ -1171,3 +1171,66 @@ no client grab and nothing streamed - not Host Assist (Steer returns on kinemati
 unknown (host also runs Admin Menu, REPOLib, MenuLib).
 trajLag swung 123 -> 275 -> 162ms in one session: it is one global value, and since 1.5.3
 only non-streamed objects feed it. Not acted on.
+
+## 1.6.0 - Host Assist automatic, Instant Weapons (game's own logic, locally), bomb head
+
+NOTHING IN THIS ENTRY HAS BEEN PLAYED. 1.5.4 was never played either (the user went straight
+to these requests). Next log must be read against BOTH entries.
+
+USER ANSWERS: "Head" = the Cleanup Crew's head (EnemyBombThrowerHead) - "he dropped his
+head which blew up". Wants instant weapons back ("the last thing to perfect this mod"),
+Host Assist automatic when the host has the mod with a switch to force it off, and the
+store description to recommend everyone installs it.
+
+HOST ASSIST AUTOMATIC. New config key "Host Assist" default TRUE (the old key "Host Assist
+(experimental)" is orphaned on purpose: its saved false would keep it off for every 1.5.x
+user). Player property "rsync" now carries a protocol number: 2 (1.5.x wrote 1), 0 when
+switched off. A client streams only to a host with >= 2, so 1.6.0 never streams to a 1.5.x
+host. CONSEQUENCE: with default on, HostAssist.HostTick/Steer now runs on every modded host
+- the mod is no longer "inert while hosting" by default.
+manifest + publish.yml description (must match, 249 chars): "[Experimental]
+NetworkingReworked replacement. Singleplayer-feel multiplayer for R.E.P.O. v0.5.0+: instant
+carts, doors, items. Works with unmodded hosts; best when everyone has it (Host Assist
+auto-enables). CartSpeedSync auto-disabled. By Revival."
+
+INSTANT WEAPONS (config "Instant Weapons (experimental)", default OFF; the user's own cfg is
+set to true for testing). Design: do not copy weapon logic - run the game's. WeaponAuthority
+Patch swaps SemiFunc.IsMasterClientOrSingleplayer() for "master, or this is the simulated
+weapon the local player holds (or released < 0.1s ago)" in exactly: ItemGun.UpdateMaster,
+ItemGun.AimTargetUpdate, ItemMelee.FixedUpdate, ItemMelee.TurnWeapon,
+ItemMelee.ScrollSwingAnimationTick, ItemMelee.ScrollSwingStartRPC. Each was read for side
+effects: they pose/tune the held weapon only. What stays host-only because it has its OWN
+gate in a method not on the list: ItemMelee.StateSet (called from the swing detection we now
+run - a no-op on a client), BatteryCheckLogic, MeleeBreak/MeleeFix, ItemGun.ShootLogic,
+ShootRPC's host half, ShootBullet, Misfire. BEFORE ADDING A METHOD TO THE LIST: read every
+call it makes; a method that sends an RPC or changes state must not be on it.
+Scroll swing: the game sends ScrollSwingStartRPC to the MASTER only. MeleeScrollSwingPatch
+(prefix/postfix on ScrollRotateLogic) sees a swing start as one of the two scroll cooldowns
+going UP, then invokes ScrollSwingStartRPC locally with the camera right axis and direction
+(localCall flag); the transpiler turns its `IsMultiplayer()` sender check into "host only";
+MeleeScrollSwingReceivePatch drops any non-local call on a client. Recoil: GunRecoilPatch
+postfix on ShootRPC applies the one-line host impulse to our copy (sender must be master).
+SimState.weapon (no rotation mirror for weapons - it would fight the aim), releasedAt.
+Host Assist: HostDrivenReason returns null for ItemGun/ItemMelee - a weapon is only streamed
+by a client that runs its logic, so its copy is the complete one; the host follows it.
+WHY THIS IS NOT THE 1.1.0 MISTAKE (which did transpile these and "buzzed violently"): in
+1.1.0 a held object was also steered toward the host every tick and mirrored its rotation,
+and OverrideTimersTick was not yet transpiled. Since 1.2.14 nothing touches a held object.
+That is the argument; the playtest decides. IF IT BUZZES: the switch is off by default and
+1.5.4 behaviour is one click away; look first at anything else writing the held weapon's
+rotation targets (grabber.cameraRelativeGrabbedForward/Up).
+FOUR NEW PATCH CLASSES in patchTypes: WeaponAuthorityPatch, MeleeScrollSwingPatch,
+MeleeScrollSwingReceivePatch, GunRecoilPatch (loaded line should read "Patches: 19 ok").
+CHECK FIRST IN THE NEXT LOG: the loaded line count and any "WeaponAuthorityPatch:" /
+"MeleeScrollSwingPatch:" warning; "[assist] Item Gun/Item Melee ...: streamed to the host";
+held weapon drift and thrown-weapon [traj] error vs the 1.5.3 numbers above.
+
+BOMB HEAD. EnemyBombThrowerHead has its own PhysGrabObject/PhotonView and is not parented
+under Enemy/EnemyRigidbody, so CanSimulate let it in. All its motion is master-only (hop
+toward players 216-293, throw 165-169) and between throws the host calls OverrideDeactivate
+- ON THE MASTER ONLY (133-135), so on a client the object stays "active" and only its
+position goes to physDisabledPosition. Our pooled-host guard (1.2.12) then left our copy
+where it lay: a grabbable ghost. FIX: CanSimulate false for that component. GENERAL RULE:
+a despawn that is "teleport to the parking spot" with no client-side deactivate means the
+object is host-driven and must not be simulated; the pooled-host guard is right for objects
+that also deactivate locally.

@@ -54,6 +54,8 @@ namespace RevivalSync
             public Trajectory traj;         // path history + in-flight steering (Trajectory Matching)
             public float rideHoldTimer;     // carts: keep marking riders briefly after use ends
             public bool mirrorHeldRot;      // item: copy the host's (straightened) rotation while held
+            public bool weapon;             // gun / melee: the game's own weapon logic runs for it in our hand
+            public float releasedAt = -999f; // Time.time of our last release (weapon release spin)
 
             public bool hasHostState;
             public float lastPacketTime = -999f;
@@ -209,6 +211,19 @@ namespace RevivalSync
             return ptv != null && byPtv.TryGetValue(ptv, out SimState st) && !st.droneExempt;
         }
 
+        /// <summary>The rigidbody of a simulated weapon the local player is holding (or let go
+        /// of a moment ago — the game's release spin runs on the tick after the release), else
+        /// null. `self` is the weapon script or anything on the same object.</summary>
+        internal static Rigidbody HeldWeaponBody(Component self)
+        {
+            if (self == null || states.Count == 0) return null;
+            PhysGrabObject pgo = self.GetComponent<PhysGrabObject>();
+            if (pgo == null) pgo = self.GetComponentInParent<PhysGrabObject>();
+            if (pgo == null || !states.TryGetValue(pgo, out SimState st)) return null;
+            if (!st.weapon || st.droneExempt || st.rb == null) return null;
+            return st.localGrab || Time.time - st.releasedAt < 0.1f ? st.rb : null;
+        }
+
         internal static bool IsLocalGrab(PhysGrabObject pgo)
         {
             return pgo != null && states.TryGetValue(pgo, out SimState st) && st.localGrab;
@@ -286,8 +301,19 @@ namespace RevivalSync
             // the host never had, so its flight was corrected by up to 1.1m ("glitches out").
             // Re-implementing ~300 lines of weapon logic that changes with every update is
             // the 1.1.1 mistake again; vanilla sync is correct by construction.
-            if (o.GetComponentInChildren<ItemGun>(true) != null) return false;
-            if (o.GetComponentInChildren<ItemMelee>(true) != null) return false;
+            // 1.6.0, "Instant Weapons": simulated again, but with the game's OWN weapon
+            // methods running for the weapon in our hand (WeaponAuthorityPatch) instead of a
+            // copy of them. Off = vanilla sync, as in 1.5.4.
+            if (o.GetComponentInChildren<ItemGun>(true) != null || o.GetComponentInChildren<ItemMelee>(true) != null)
+            {
+                return Plugin.InstantWeapons.Value && Plugin.SimulateItems.Value;
+            }
+            // The Cleanup Crew's bomb head (EnemyBombThrowerHead) is its own networked object,
+            // not a child of the enemy, so the Enemy checks above miss it. It hops after
+            // players and is parked off-map between throws by host-only code; simulated, it
+            // stayed lying where it fell and could be picked up as a ghost after it had
+            // exploded (1.5.3 session: in hand with the host's copy 3km away).
+            if (o.GetComponent<EnemyBombThrowerHead>() != null) return false;
             if (o.GetComponentInParent<ItemAttributes>() != null)
             {
                 foreach (Component c in o.GetComponentsInParent<Component>(true))
@@ -431,8 +457,11 @@ namespace RevivalSync
             if (!st.isHinge && st.cart == null && pgo.GetComponentInParent<ItemAttributes>() != null)
             {
                 // gadgets: the host runs their straightening scripts, we mirror its rotation
-                // gently (weapons are not simulated at all — see CanSimulate)
-                st.mirrorHeldRot = true;
+                // gently. Weapons pose themselves (WeaponAuthorityPatch) — a mirror on top
+                // would fight the aim the game is computing right here.
+                st.weapon = pgo.GetComponentInChildren<ItemGun>(true) != null
+                    || pgo.GetComponentInChildren<ItemMelee>(true) != null;
+                st.mirrorHeldRot = !st.weapon;
                 st.droneSelf = pgo.GetComponentInChildren<ItemDrone>(true);
                 if (st.droneSelf != null)
                 {
@@ -505,6 +534,7 @@ namespace RevivalSync
             if (!Ready || pgo == null || !states.TryGetValue(pgo, out SimState st) || !st.localGrab) return;
 
             st.localGrab = false;
+            st.releasedAt = Time.time;
             st.desyncTimer = 0f;
             // carts get extra settling time: a rapid release mid-drag otherwise blends the
             // cart back toward the host's still-trailing copy (visible rollback)

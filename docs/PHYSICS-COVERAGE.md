@@ -22,7 +22,8 @@ not on the exemption list in `SimManager.CanSimulate`.
 | `ItemVehicle` | early | drives itself; host-only |
 | `ItemDrone` (while switched on) | 1.2.8 | dynamic exemption — a switched-off drone in the hand is still predicted. Since 1.5.4 a switched-on drone is the host's even while held (`ItemDrone.FixedUpdate` is master-only) |
 | objects a drone is carrying | 1.2.7 | the drone provides the motion; the local player's own grab still wins |
-| `ItemGun`, `ItemMelee` | 1.5.4 | aim (`AimTargetUpdate`), turn-with-swing (`TurnWeapon`), scroll swing, release torque, recoil are all master-only since the Nov 2026 build |
+| `ItemGun`, `ItemMelee` | 1.5.4 | aim (`AimTargetUpdate`), turn-with-swing (`TurnWeapon`), scroll swing, release torque, recoil are all master-only since the Nov 2026 build. **1.6.0:** simulated again when `Instant Weapons` is on, with those game methods running locally for the held weapon (`WeaponAuthorityPatch`) |
+| `EnemyBombThrowerHead` (Cleanup Crew's bomb head) | 1.6.0 | its own networked object, not under the enemy; hops, is thrown and parked off-map by host-only code |
 | `ItemRubberDuck` | early | self-propelled |
 | `ItemUpgrade` | 1.2.17 | client-side attribution race — latency advantage stole upgrades |
 | `ItemCartCannonMain` (cart cannon + laser) | 1.2.21 | upright/aim pose is master-only |
@@ -114,8 +115,10 @@ object that is the whole point. On a scripted one it cancels everything in the l
 for **every** player, and a `mirrorHeldRot` item would chase its own echo (we copy the
 host's rotation while the host copies ours).
 
-Rule, in `HostAssist.HostDrivenReason`: only carts and plain physics objects are streamed.
-Not streamed — any item (`ItemAttributes`), anything with a `Trap` component, and anything
+Rule, in `HostAssist.HostDrivenReason`: only carts, plain physics objects and (1.6.0)
+weapons held with `Instant Weapons` are streamed — the last because the client then runs
+the complete weapon logic itself, so its copy is the full one.
+Not streamed — any other item (`ItemAttributes`), anything with a `Trap` component, and anything
 carrying a script whose name contains `Valuable` (apart from the plumbing every valuable
 has: `ValuableObject`, `ValuableDiscover*`, ...) or starts with `MuseumProp`. Those behave
 exactly as on a host without Host Assist. The rule errs toward "host-driven": a wrong yes

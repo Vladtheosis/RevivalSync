@@ -26,12 +26,25 @@ detects it at startup and turns itself off rather than misbehaving.
 — the host-state capture design, the fully-local door model with event-level reconciliation,
 and the release-state overwrite that makes throws fly clean. Thank you.
 
-## What it does (client-side only — works with unmodded hosts)
+## Best with everyone on it
+
+RevivalSync works on its own with any host. **It works best when the host has it too:**
+then **Host Assist** switches itself on — what you hold is sent straight to the host, so
+the host's copy of your cart or loot follows yours instead of trailing a moment behind, and
+a throw flies the same on every screen with nothing to settle afterwards. Nothing to set
+up: it turns on when it sees the host has the mod, and stays out of the way when not.
+Everyone should be on the same version. The `Host Assist` switch in the config forces it
+off.
+
+## What it does (works with unmodded hosts)
 
 - **Instant grabs**: valuables, props, items and carts respond the moment you grab them,
   no host round trip. Carts follow you at full speed with the game's real steering feel;
-  throws fly the way you threw them. Objects the host has to drive itself (guns and melee
-  weapons, vehicles, switched-on drones, the duck) use the game's normal sync.
+  throws fly the way you threw them. Objects the host has to drive itself (vehicles,
+  switched-on drones, the duck, enemy parts) use the game's normal sync.
+- **Instant Weapons (experimental, off by default)**: guns and melee weapons follow your
+  hand instantly, with the game's own aiming, turning and swinging running on your side.
+  Off, weapons use the game's normal sync — always correct, with the usual delay.
 - **Instant doors**: doors and cabinets run the game's own hinge logic locally, so they
   swing the moment you touch them (the host still decides when they break).
 - **Synced world**: everything you're not holding glides smoothly toward the host's
@@ -73,8 +86,8 @@ like vanilla; only the physics feel is local.
   if it happens to you, a report with `Verbose Logging` on and your `LogOutput.log`
   attached helps a lot.
 
-Both players can (and should) install it — it automatically does nothing while you're the
-host and activates when you're the client.
+Everyone can (and should) install it. While you host, the only thing it does is Host
+Assist for your friends who have it; everything else activates when you are a client.
 
 ## Config
 
@@ -83,8 +96,9 @@ has its own switch in section "1. Main". Easiest with the in-game settings menu 
 **REPOConfig** mod; otherwise edit `BepInEx/config/com.Revival.revivalsync.cfg`.
 Three sections:
 
-- **1. Main** — plain on/off switches (instant carts / doors / items, no timeout kicks,
-  smooth enemies). Safe to flip; everything defaults to ON.
+- **1. Main** — plain on/off switches (instant carts / doors / items, Host Assist, no
+  timeout kicks, smooth enemies). Safe to flip; everything defaults to ON except the two
+  marked experimental (Instant Weapons, Trajectory Matching).
 - **2. Fine-Tuning** — numbers for how firmly things sync. The defaults are good; touch
   only if you're troubleshooting something specific.
 - **3. Debug** — `Verbose Logging`: turn ON before reporting a bug and include your
