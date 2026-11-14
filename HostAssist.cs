@@ -26,9 +26,10 @@ namespace RevivalSync
         private const byte EventCode = 187;
         private const string Prop = "rsync";
         // Value of the player property. 1 = 1.5.x (opt-in, items steered or not depending on
-        // the build); 2 = 1.6.0: on by default, weapons streamed, scripted objects not. A
-        // client only streams to a host on its own protocol or newer.
-        private const int Protocol = 2;
+        // the build); 2 = 1.6.0: on by default, weapons streamed, scripted objects not;
+        // 3 = 1.6.1: the host follows a release until the object rests (was 0.6s). A client
+        // only streams to a host on its own protocol or newer.
+        private const int Protocol = 3;
 
         private static int ProtocolOf(Player p)
         {
@@ -49,9 +50,11 @@ namespace RevivalSync
             public bool hostDriven;          // scripted object streamed by an older client: never steered
         }
 
-        /// <summary>How long after letting go the holder keeps streaming and the host keeps
-        /// following — the release then needs no jump on the host and no settle on the client.</summary>
-        internal const float Tail = 0.4f;
+        /// <summary>The longest the holder keeps streaming after letting go; normally it stops
+        /// as soon as its copy is at rest (SimManager.TickAssistTail). The host follows for as
+        /// long as the stream stays fresh — the release then needs no jump on the host and no
+        /// settle on the client.</summary>
+        internal const float Tail = 4f;
 
         /// <summary>Client: the host is following what we hold, so WE are the reference —
         /// nothing on our side should steer a just-released object toward the host.</summary>
@@ -277,7 +280,7 @@ namespace RevivalSync
             {
                 // only the holder may steer it — or, for a moment after letting go, the player
                 // who just held it, as long as nobody else has picked it up
-                if (now - e.releasedAt > Tail + 0.2f || e.pgo.playerGrabbing.Count > 0) return;
+                if (now - e.releasedAt > Tail + 0.5f || e.pgo.playerGrabbing.Count > 0) return;
             }
             Vector3 gap = e.pos - rb.position;
             if (gap.sqrMagnitude > MaxGap * MaxGap) return;      // snagged or bogus: host physics wins

@@ -1234,3 +1234,40 @@ where it lay: a grabbable ghost. FIX: CanSimulate false for that component. GENE
 a despawn that is "teleport to the parking spot" with no client-side deactivate means the
 object is host-driven and must not be simulated; the pooled-host guard is right for objects
 that also deactivate locally.
+
+## 1.6.1 - Host Assist release tail runs until the object rests (first 1.6.0 session)
+
+SESSION 2026-11-14 10:27 (client session-20261114-142728, host session-20261114-142740, both
+1.6.0, game reports v0.5.1 = the Nov 5 DLL, ping ~88ms). ~2.5 minutes in a level.
+1.6.0 CHECKS: "Patches: 19 ok, 0 failed" on both, no WeaponAuthorityPatch / MeleeScrollSwing
+warning; "[assist] Item Melee Baseball Bat / Item Gun Shotgun: streamed to the host"; host
+logged "a client is streaming held objects". User: "its instant but when dropped it
+glitches" - then "keep it off for now till we find a proper fix". NO BUZZING REPORTED: the
+1.1.1 fear did not materialise in this (short) session. Scroll swing / recoil: not mentioned.
+Held drift under assist: bat 1.0m @ 5.9 m/s, 0.6 @ 10.3, 0.4 @ 5.3 = roughly 0.06-0.17s x
+speed. NOTE for reading these numbers: `drift` compares our copy with the host state AS
+RECEIVED, so even a host that follows perfectly shows speed x (up + down latency); it is
+not the host's real error. The 1.5.2 "expect 0.6m" note made the same simplification.
+
+THE DROP. No data in the log - under assist a release has no [traj] line and nothing else
+measured it (fixed below). Reasoning from the code: release -> client keeps pure local
+physics for PostThrowGrace 0.6s; it streamed for Tail = 0.4s and the host followed for 0.6s.
+A drop from hand height lands at ~0.45s, so the host's copy did its landing and bouncing on
+its own, and at 0.6s ours was blended to wherever the host's had stopped. For a compact
+valuable that is a few cm; for a bat or shotgun it is a different lying angle = a visible
+slide/turn. Same path as plain loot ("super smooth") - the shape of the object is the
+difference, not weapon code. UNPROVEN until the new log line says so.
+FIX: SimManager.TickAssistTail. Tail is now a 4s LIMIT; the client streams and stays in
+pure local physics (postThrowTimer held at >= 0.1) until its copy has been still for 15
+ticks, or: assist off, landed in a cart, another player grabbed it (HeldByAnotherPlayer),
+host kinematic (ignored for the first 0.5s - packets from "still in your hand" arrive after
+the release), time limit. Host follows the ex-holder while the stream is fresh, up to
+Tail + 0.5s. Protocol 3 (a 1.6.1 client does not stream to a 1.6.0 host, which would stop
+following at 0.6s while the client waited for rest).
+NEW LOG LINE, the proof: "[assist] X: release followed for 0.92s (at rest) - host copy
+0.03m / 4 deg away, packet 0.05s old". Small numbers there + still "glitches" = the cause is
+elsewhere (then look at: the 0.1s post-release weapon window in HeldWeaponBody, the game's
+ReleaseTorqueLogic, host Throw vs our LocalThrow). Big numbers = the host is not following
+(check gap > MaxGap 4m, stream freshness, the host's own log).
+Instant Weapons: default stays off; the user's cfg set back to false at their request. To
+test this fix on weapons it has to be switched on again.

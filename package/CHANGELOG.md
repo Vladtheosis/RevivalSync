@@ -2,6 +2,16 @@
 
 **Source code / report bugs / help develop:** https://github.com/Vladtheosis/RevivalSync
 
+# 1.6.1 — Host Assist follows a drop until it lands
+
+- **Dropped and thrown things no longer shift after they land (Host Assist).** The host
+  used to stop following what you let go of after 0.4 seconds — usually while it was still
+  in the air — so its copy finished the fall its own way and yours was then pulled over to
+  match. Most visible on long objects like a bat or a shotgun. The host now follows until
+  your copy has come to rest.
+- Both players need 1.6.1 for Host Assist.
+- Instant Weapons is still experimental and off by default.
+
 # 1.6.0 — Host Assist is automatic, Instant Weapons
 
 - **Host Assist now switches itself on** whenever the host also has RevivalSync — nothing

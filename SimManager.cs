@@ -40,7 +40,9 @@ namespace RevivalSync
             public float noSnapTimer;       // recently thrown: landings glide to the host spot, never teleport
             public float hingeSyncPause;    // door we just pushed/released: settle window before host truth resumes
             public float hingeOpenedAt = -999f; // when we last opened this door ahead of the host
-            public float assistTail;        // Host Assist: keep streaming briefly after letting go
+            public float assistTail;        // Host Assist: time left to keep streaming after letting go
+            public float assistTailAge;     // (how long this release has been followed, for the log)
+            public int assistStill;         // (physics ticks our released copy has been at rest)
             public bool hostDriven;         // Host Assist: scripted object, the host must keep driving it
             public string hostDrivenWhy;    // (the script that makes it so, for the log)
             public bool droneExempt;        // magnet drone drives this object: vanilla sync until released
@@ -577,6 +579,8 @@ namespace RevivalSync
             // streaming for a moment so its copy glides onto ours instead of jumping
             HostAssist.ClientSend(st, true);
             st.assistTail = HostAssist.For(st) && !st.isHinge ? HostAssist.Tail : 0f;
+            st.assistTailAge = 0f;
+            st.assistStill = 0;
             // let go of something a drone is driving (an active drone): it was never ours,
             // so there is no throw to protect and no flight to track
             if (st.droneExempt) ClearTransientSync(st, null);
@@ -1151,6 +1155,62 @@ namespace RevivalSync
             }
         }
 
+        /// <summary>
+        /// Host Assist, after we let go: keep streaming — and keep our copy in pure local
+        /// physics — until it has come to REST, so the host's copy lands where ours did.
+        ///
+        /// Up to 1.6.0 the tail was a fixed 0.4s. A dropped object is usually still in the
+        /// air then: the host's copy finished the fall on its own, bounced its own way, and
+        /// when our grace ended our copy was pulled over to wherever the host's had stopped.
+        /// Barely visible on a compact valuable; on a bat or a shotgun lying at a different
+        /// angle it is the "glitches when dropped" of the first Instant Weapons session.
+        /// </summary>
+        private static void TickAssistTail(SimState st)
+        {
+            st.assistTail -= Time.fixedDeltaTime;
+            st.assistTailAge += Time.fixedDeltaTime;
+            bool moving = st.rb.velocity.sqrMagnitude > 0.01f || st.rb.angularVelocity.sqrMagnitude > 0.04f;
+            st.assistStill = moving ? 0 : st.assistStill + 1;
+
+            string ended = null;
+            if (!HostAssist.For(st)) ended = "assist off";
+            else if (st.ridingTick == tickCounter) ended = "landed in a cart";
+            // (not in the first half second: packets sent while the host still saw the object
+            // in our hand are flagged kinematic and arrive after we have let go)
+            else if (st.hostKinematic && st.assistTailAge > 0.5f) ended = "the host took it";
+            else if (HeldByAnotherPlayer(st)) ended = "someone else grabbed it";
+            else if (st.assistStill >= 15) ended = "at rest";
+            else if (st.assistTail <= 0f) ended = "time limit";
+
+            if (ended == null)
+            {
+                if ((tickCounter & 1) == 0) HostAssist.ClientSend(st, false);
+                // the grace below ("pure local physics") lasts exactly as long as the tail
+                if (st.postThrowTimer < 0.1f) st.postThrowTimer = 0.1f;
+                return;
+            }
+
+            st.assistTail = 0f;
+            if (Plugin.VerboseLogging.Value && st.hasHostState)
+            {
+                // what the host had when we stopped — it keeps closing in for a moment after
+                // this, so a small figure here means nothing is left to settle
+                Plugin.Log.LogInfo($"[assist] {st.pgo.name}: release followed for {st.assistTailAge:F2}s ({ended}) — " +
+                    $"host copy {Vector3.Distance(st.rb.position, st.hostPos):F2}m / " +
+                    $"{Quaternion.Angle(st.rb.rotation, st.hostRot):F0} deg away, packet {Time.unscaledTime - st.lastPacketTime:F2}s old");
+            }
+        }
+
+        private static bool HeldByAnotherPlayer(SimState st)
+        {
+            List<PhysGrabber> grabbing = st.pgo.playerGrabbing;
+            for (int i = 0; i < grabbing.Count; i++)
+            {
+                if (grabbing[i] != null && !grabbing[i].isLocal) return true;
+            }
+            return false;
+        }
+
         private static void TickShadowInner(SimState st)
         {
             pgoIsMaster(st.pgo) = false;
@@ -1158,11 +1218,7 @@ namespace RevivalSync
             // deactivated objects sit kinematic in limbo (extracted/destroyed) — hands off
             if (!pgoIsActive(st.pgo)) return;
 
-            if (st.assistTail > 0f)
-            {
-                st.assistTail -= Time.fixedDeltaTime;
-                if ((tickCounter & 1) == 0) HostAssist.ClientSend(st, false);
-            }
+            if (st.assistTail > 0f) TickAssistTail(st);
 
             // CART CARGO — the original NetworkingReworked's model (credit: readthisifbad).
             // While the cart is in use, cargo gets NO sync of any kind: it simply rides in
